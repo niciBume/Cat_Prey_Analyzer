@@ -43,17 +43,4 @@ class Camera:
                 if i == 60:
                     print("Loop ended, starting over.")
                     camera.close()
-                    break
-
-
-
-if __name__ == "__main__":
-    deque = deque()
-    nici_luemmel = no_class()
-    super_thread = Thread(target=nici_luemmel.make_images_great_again, args=(deque,))
-    super_thread.start()
-    start = time.time()
-    while True:
-        if len(deque) > 1:
-            print("saving img")
-            cv2.imwrite("img/" + str(time.time()-start) + ".jpg", deque.pop()[1])
+                    break    
