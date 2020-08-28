@@ -33,7 +33,7 @@ Now the runtime numbers are quite high, which is why we use a dynamically adapti
 
 # Results
 
-<img src="/readme_images/combined_curve.png" width="400">
+<img src="/readme_images/combined_curve.png" width="700">
 
 
 <img src="/readme_images/Cummuli Confusion Matrix @ Threshold_ 2.96.png" width="400">
