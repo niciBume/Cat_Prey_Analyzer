@@ -29,7 +29,7 @@ As depicted in the image, there are four resulting paths that can be taken which
 
 Now the runtime numbers are quite high, which is why we use a dynamically adapting queue to adjust the framerate of the system. This part is built specifically for the RPI and its camera system. It is a multithreading process where the camera runs on an own thread and the cascade on a seperate thread. The camera fills a concurrent queue while the cascade pops the queue at a dynamic rate. Sounds fancy and complicated, but it isn't:
 
-<img src="/readme_images/cascade.png" width="400">
+<img src="/readme_images/queue.png" width="400">
 
 
 
