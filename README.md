@@ -3,7 +3,7 @@ If you own a cat that has the freedom to go outside, then you probably are famil
 This project aims to perform Cat Prey Detection with Deep Learning on any cat in any environement. For a brief and light intro in what it does, check out the [Raspberry Pi blog post](https://www.raspberrypi.org/blog/deep-learning-cat-prey-detector/) about it. The idea is that you can use the output of this system to trigger your catflap such that it locks out you cat.
 
 # Related work
-This isn't the first approach at solving the mentioned problem! There have been other equally (if not better) valid approaches such as the [Catcierge] (https://github.com/JoakimSoderberg/catcierge) which analyzes the silhouette of the cat a very recent approach of the [AI powered Catflap] (https://www.theverge.com/tldr/2019/6/30/19102430/amazon-engineer-ai-powered-catflap-prey-ben-hamm).
+This isn't the first approach at solving the mentioned problem! There have been other equally (if not better) valid approaches such as the [Catcierge](https://github.com/JoakimSoderberg/catcierge) which analyzes the silhouette of the cat a very recent approach of the [AI powered Catflap](https://www.theverge.com/tldr/2019/6/30/19102430/amazon-engineer-ai-powered-catflap-prey-ben-hamm).
 The difference of this project however is that it aims to solve *general* cat-prey detection through a vision based approach. Meaning that this should work for any cat! 
 
 
@@ -31,5 +31,11 @@ Now the runtime numbers are quite high, which is why we use a dynamically adapti
 
 <img src="/readme_images/queue.png" width="400">
 
+# Results
+
+<img src="/readme_images/combined_curve.png" width="400">
+
+
+<img src="/readme_images/Cummuli Confusion Matrix @ Threshold_ 2.96.png" width="400">
 
 
