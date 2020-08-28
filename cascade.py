@@ -321,7 +321,7 @@ class Sequential_Cascade_Feeder():
 
     def queque_handler(self):
         # Do this to force run all networks s.t. the network inference time stabilizes
-        self.single_debug()
+        #self.single_debug()
 
         camera = Camera()
         camera_thread = Thread(target=camera.fill_queue, args=(self.main_deque,))
