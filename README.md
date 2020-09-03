@@ -38,7 +38,8 @@ Now the runtime numbers are quite high, which is why we use a dynamically adapti
 
 <img src="/readme_images/queue.png" width="400">
 
-
+### Cummuli Points ###
+TODO
 
 # Results
 
