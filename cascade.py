@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-import os, cv2, time, csv, sys
+import os, cv2, time, csv, sys, gc
 import pytz
 from datetime import datetime
 from collections import deque
@@ -285,14 +285,14 @@ class Sequential_Cascade_Feeder():
     def single_debug(self):
         start_time = time.time()
         target_img_name = 'dummy_img.jpg'
-        target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/input/Node1_001607_11_2020_05_24_16-56-22.jpg'))
+        target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
         cascade_obj = self.feed(target_img=target_img, img_name=target_img_name)[1]
         print('Runtime:', time.time() - start_time)
         return cascade_obj
 
     def queque_handler(self):
         # Do this to force run all networks s.t. the network inference time stabilizes
-        #self.single_debug()
+        self.single_debug()
 
         camera = Camera()
         camera_thread = Thread(target=camera.fill_queue, args=(self.main_deque,))
@@ -303,12 +303,16 @@ class Sequential_Cascade_Feeder():
                 self.main_deque.clear()
                 print('DELETING QUEQUE BECAUSE OVERLOADED!')
                 self.bot.send_text(message='Running Hot... had to kill Queque!')
+                # Clean up garbage
+                gc.collect()
 
             elif len(self.main_deque) > self.DEFAULT_FPS_OFFSET:
                 self.queque_worker()
 
             else:
                 print('Nothing to work with => Queque_length:', len(self.main_deque))
+                # Clean up garbage
+                gc.collect()
                 time.sleep(0.25)
 
             #Check if user force opens the door

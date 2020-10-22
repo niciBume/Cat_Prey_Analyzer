@@ -11,7 +11,7 @@ import time
 import sys
 import cv2
 import numpy as np
-import io
+import io, gc
 
 class Camera:
     def __init__(self,):
@@ -25,10 +25,11 @@ class Camera:
 
     def fill_queue(self, deque):
         while(1):
+            gc.collect()
             camera = PiCamera()
             camera.framerate = 3
-            camera.vflip = True
-            camera.hflip = True
+            camera.vflip = False
+            camera.hflip = False
             camera.resolution = (2592, 1944)
             camera.exposure_mode = 'sports'
             stream = io.BytesIO()
