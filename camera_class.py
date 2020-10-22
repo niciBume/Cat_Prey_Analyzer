@@ -43,4 +43,5 @@ class Camera:
                 if i == 60:
                     print("Loop ended, starting over.")
                     camera.close()
-                    break    
+                    del camera
+                    break

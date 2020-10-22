@@ -16,34 +16,6 @@ from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Sta
 from CatPreyAnalyzer.camera_class import Camera
 cat_cam_py = str(Path(os.getcwd()).parents[0])
 
-class Event_Element():
-    def __init__(self, img_name, cc_target_img):
-        self.img_name = img_name
-        self.cc_target_img = cc_target_img
-        self.cc_cat_bool = None
-        self.cc_pred_bb = None
-        self.cc_inference_time = None
-        self.cr_class = None
-        self.cr_val = None
-        self.cr_inference_time = None
-        self.bbs_target_img = None
-        self.bbs_pred_bb = None
-        self.bbs_inference_time = None
-        self.haar_pred_bb = None
-        self.haar_inference_time = None
-        self.ff_haar_bool = None
-        self.ff_haar_val = None
-        self.ff_haar_inference_time = None
-        self.ff_bbs_bool = None
-        self.ff_bbs_val = None
-        self.ff_bbs_inference_time = None
-        self.face_box = None
-        self.face_bool = None
-        self.pc_prey_class = None
-        self.pc_prey_val = None
-        self.pc_inference_time = None
-        self.total_inference_time = None
-        self.output_img = None
 
 class Spec_Event_Handler():
     def __init__(self):
@@ -97,12 +69,12 @@ class Spec_Event_Handler():
 
 class Sequential_Cascade_Feeder():
     def __init__(self):
-        self.log_dir = os.path.join(os.getcwd(),'log')
+        self.log_dir = os.path.join(os.getcwd(), 'log')
         print('Log Dir:', self.log_dir)
         self.event_nr = 0
         self.base_cascade = Cascade()
         self.DEFAULT_FPS_OFFSET = 2
-        self.QUEQUE_MAX_THRESHOLD = 40
+        self.QUEQUE_MAX_THRESHOLD = 30
         self.fps_offset = self.DEFAULT_FPS_OFFSET
         self.EVENT_FLAG = False
         self.event_objects = []
@@ -120,7 +92,6 @@ class Sequential_Cascade_Feeder():
         self.NO_PREY_FLAG = None
         self.queues_cumuli_in_event = []
         self.bot = NodeBot()
-        #Send welcome message via telegram
         self.main_deque = deque()
 
     def reset_cumuli_et_al(self):
@@ -395,6 +366,35 @@ class Sequential_Cascade_Feeder():
 
         return total_runtime, single_cascade
 
+class Event_Element():
+    def __init__(self, img_name, cc_target_img):
+        self.img_name = img_name
+        self.cc_target_img = cc_target_img
+        self.cc_cat_bool = None
+        self.cc_pred_bb = None
+        self.cc_inference_time = None
+        self.cr_class = None
+        self.cr_val = None
+        self.cr_inference_time = None
+        self.bbs_target_img = None
+        self.bbs_pred_bb = None
+        self.bbs_inference_time = None
+        self.haar_pred_bb = None
+        self.haar_inference_time = None
+        self.ff_haar_bool = None
+        self.ff_haar_val = None
+        self.ff_haar_inference_time = None
+        self.ff_bbs_bool = None
+        self.ff_bbs_val = None
+        self.ff_bbs_inference_time = None
+        self.face_box = None
+        self.face_bool = None
+        self.pc_prey_class = None
+        self.pc_prey_val = None
+        self.pc_inference_time = None
+        self.total_inference_time = None
+        self.output_img = None
+
 class Cascade:
     def __init__(self):
         # Models
@@ -610,8 +610,8 @@ class Cascade:
 class NodeBot():
     def __init__(self):
         #Insert Chat ID and Bot Token according to Telegram API
-        self.CHAT_ID = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-        self.BOT_TOKEN = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+        self.CHAT_ID = 'XXXXXXXXXXXXXXXXXXX'
+        self.BOT_TOKEN = 'XXXXXXXXXXXXXXXXXXX'
 
         self.last_msg_id = 0
         self.bot_updater = Updater(token=self.BOT_TOKEN)
