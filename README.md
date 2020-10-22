@@ -24,10 +24,11 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
   ```
   I am working on a environement variable script that will automate this process. In the meanwhile sorry for this.
   
-  - If you want your RPI to directly boot into the Cat_Prey_Analyzer the I suggest you use a crontab. To do so, on the RPI type: ```crontab -e``` and enter 
+  - If you want your RPI to directly boot into the Cat_Prey_Analyzer then I suggest you use a crontab. To do so, on the RPI type: ```crontab -e``` and enter 
   ```
   @reboot sleep 30 && sudo /home/pi/CatPreyAnalyzer/catCam_starter.sh
   ```
+  Don't forget to make the ```catCam_starter.sh``` by performing ```chmod +x /home/pi/CatPreyAnalyzer/catCam_starter.sh```
   
   - Reboot and enjoy!
   
