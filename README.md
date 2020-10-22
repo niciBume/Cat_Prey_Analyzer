@@ -28,8 +28,10 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
   ```
   @reboot sleep 30 && sudo /home/pi/CatPreyAnalyzer/catCam_starter.sh
   ```
-  Don't forget to make the ```catCam_starter.sh``` by performing ```chmod +x /home/pi/CatPreyAnalyzer/catCam_starter.sh```
-  
+  - Don't forget to make the ```catCam_starter.sh``` by performing 
+  ```
+  chmod +x /home/pi/CatPreyAnalyzer/catCam_starter.sh
+  ```
   - Reboot and enjoy!
   
   By following all these steps, you should now be greated by your Bot at startup:
@@ -39,13 +41,13 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
   The system is now running and you can check out the bot commands via ```/help```. Be aware that you need patience at startup, as the models take up to 5 min to be   completely loaded, as they are very large.
   
 # A word of caution
-This project uses deeplearning! Contrary to popular belief DL is **not** magic (altough close 😎)! There are going to be instances where the system will produce laughably wrong statements such as:
+This project uses deeplearning! Contrary to popular belief DL is **not** black magic (altough close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there are going to be instances where the system will produce absurdly wrong statements such as:
 
  <img src="/readme_images/bot_fail.png" width="400">
  
- This can happen and I can not explain why... but you have to be aware of it. 
+  This can happen and the reason why is maths... so you have to be aware of it. If this fascinates you as much as it does me and you want a deeper understanding, check out [the deeplearning book](http://www.deeplearningbook.org/)!
  
- Further this project is based on transfer learning and has had a **very** small training set of only 150 prey images, sampled from the internet and a custom data-gathering network (more info in ```/readme_images/Semesterthesis_Smart_Catflap.pdf```). It works amazingly well *for this small amount of Data*, yet you will realize that there are still a lot of false positives. I am working on a way that we could all collaborate and upload the prey images of our cats, such that we can further train the models and result in a **much** stronger classifier. 
+Further this project is based on transfer learning and has had a **very** small training set of only 150 prey images, sampled from the internet and a custom data-gathering network (more info in ```/readme_images/Semesterthesis_Smart_Catflap.pdf```). It works amazingly well *for this small amount of Data*, yet you will realize that there are still a lot of false positives. I am working on a way that we could all collaborate and upload the prey images of our cats, such that we can further train the models and result in a **much** stronger classifier. 
 
 And check the issues section for known issues regarding this project. If you encounter something new, don't hesitate to flag it! For the interested reader, a TLDR of my thesis is continued below.
 
