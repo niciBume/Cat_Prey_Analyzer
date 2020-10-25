@@ -76,6 +76,7 @@ class Sequential_Cascade_Feeder():
         self.DEFAULT_FPS_OFFSET = 2
         self.QUEQUE_MAX_THRESHOLD = 30
         self.fps_offset = self.DEFAULT_FPS_OFFSET
+        self.MAX_PROCESSES = 5
         self.EVENT_FLAG = False
         self.event_objects = []
         self.patience_counter = 0
@@ -92,6 +93,7 @@ class Sequential_Cascade_Feeder():
         self.NO_PREY_FLAG = None
         self.queues_cumuli_in_event = []
         self.bot = NodeBot()
+        self.processing_pool = []
         self.main_deque = deque()
 
     def reset_cumuli_et_al(self):
@@ -113,6 +115,13 @@ class Sequential_Cascade_Feeder():
         self.event_objects.clear()
         self.queues_cumuli_in_event.clear()
         self.main_deque.clear()
+
+        #terminate processes when pool too large
+        if len(self.processing_pool) >= self.MAX_PROCESSES:
+            print('terminating oldest processes Len:', len(self.processing_pool))
+            for p in self.processing_pool[0:int(len(self.processing_pool)/2)]:
+                p.terminate()
+            print('Now processes Len:', len(self.processing_pool))
 
     def log_event_to_csv(self, event_obj, queues_cumuli_in_event, event_nr):
         csv_name = 'event_log.csv'
@@ -241,15 +250,17 @@ class Sequential_Cascade_Feeder():
                 if self.cumulus_points / self.face_counter > self.cumulus_no_prey_threshold:
                     self.NO_PREY_FLAG = True
                     print('NO PREY DETECTED... YOU CLEAN...')
-                    p = Process(target=self.send_no_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,))
+                    p = Process(target=self.send_no_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
+                    self.processing_pool.append(p)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
                     print('IT IS A PREY!!!!!')
-                    p = Process(target=self.send_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,))
+                    p = Process(target=self.send_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
+                    self.processing_pool.append(p)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.reset_cumuli_et_al()
                 else:
@@ -270,8 +281,9 @@ class Sequential_Cascade_Feeder():
                     #TODO QUICK FIX
                     if self.face_counter == 0:
                         self.face_counter = 1
-                    p = Process(target=self.send_dk_message, args=(self.event_objects, self.cumulus_points / self.face_counter,))
+                    p = Process(target=self.send_dk_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
+                    self.processing_pool.append(p)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                 self.reset_cumuli_et_al()
 
@@ -295,24 +307,23 @@ class Sequential_Cascade_Feeder():
         self.single_debug()
 
         camera = Camera()
-        camera_thread = Thread(target=camera.fill_queue, args=(self.main_deque,))
+        camera_thread = Thread(target=camera.fill_queue, args=(self.main_deque,), daemon=True)
         camera_thread.start()
 
         while(True):
             if len(self.main_deque) > self.QUEQUE_MAX_THRESHOLD:
                 self.main_deque.clear()
-                print('DELETING QUEQUE BECAUSE OVERLOADED!')
-                self.bot.send_text(message='Running Hot... had to kill Queque!')
+                self.reset_cumuli_et_al()
                 # Clean up garbage
                 gc.collect()
+                print('DELETING QUEQUE BECAUSE OVERLOADED!')
+                self.bot.send_text(message='Running Hot... had to kill Queque!')
 
             elif len(self.main_deque) > self.DEFAULT_FPS_OFFSET:
                 self.queque_worker()
 
             else:
                 print('Nothing to work with => Queque_length:', len(self.main_deque))
-                # Clean up garbage
-                gc.collect()
                 time.sleep(0.25)
 
             #Check if user force opens the door
@@ -614,8 +625,8 @@ class Cascade:
 class NodeBot():
     def __init__(self):
         #Insert Chat ID and Bot Token according to Telegram API
-        self.CHAT_ID = 'XXXXXXXXXXXXXXXXXXX'
-        self.BOT_TOKEN = 'XXXXXXXXXXXXXXXXXXX'
+        self.CHAT_ID = 'XXXXXXXXXXXXXXXXXXXXXX'
+        self.BOT_TOKEN = 'XXXXXXXXXXXXXXXXXXXXXX'
 
         self.last_msg_id = 0
         self.bot_updater = Updater(token=self.BOT_TOKEN)
@@ -633,7 +644,7 @@ class NodeBot():
         self.init_bot_listener()
 
     def init_bot_listener(self):
-        telegram.Bot(token=self.BOT_TOKEN).send_message(chat_id=self.CHAT_ID, text='Good Morning, NodeBot2 is online!' + '🤙')
+        telegram.Bot(token=self.BOT_TOKEN).send_message(chat_id=self.CHAT_ID, text='Good Morning, NodeBot is online!' + '🤙')
         # Add all commands to handler
         help_handler = CommandHandler('help', self.bot_help_cmd)
         self.bot_dispatcher.add_handler(help_handler)
@@ -700,18 +711,14 @@ class NodeBot():
 
 class DummyDQueque():
     def __init__(self):
-        img_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/input')
-        self.imgs_for_queque = [cv2.imread(os.path.join(img_dir, x)) for x in sorted(os.listdir(img_dir)) if '.jpg' in x]
+        self.target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
 
     def dummy_queque_filler(self, main_deque):
-        counter = 0
         while(True):
-            for i, frame in enumerate(self.imgs_for_queque):
-                img_name = datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f")
-                main_deque.append((img_name, frame))
-                print("Took image, que-length:", main_deque.__len__())
-                time.sleep(0.4)
-            counter += 1
+            img_name = datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f")
+            main_deque.append((img_name, self.target_img))
+            print("Took image, que-length:", main_deque.__len__())
+            time.sleep(0.4)
 
 if __name__ == '__main__':
     sq_cascade = Sequential_Cascade_Feeder()
