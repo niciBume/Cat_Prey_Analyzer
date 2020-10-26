@@ -28,7 +28,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
   ```
   @reboot sleep 30 && sudo /home/pi/CatPreyAnalyzer/catCam_starter.sh
   ```
-  - Don't forget to make the ```catCam_starter.sh``` by performing 
+  - Don't forget to make the ```catCam_starter.sh``` executable by performing 
   ```
   chmod +x /home/pi/CatPreyAnalyzer/catCam_starter.sh
   ```
