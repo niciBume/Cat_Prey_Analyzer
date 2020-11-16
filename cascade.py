@@ -65,7 +65,7 @@ class Spec_Event_Handler():
 
             # Write img to output dir and log csv of each event
             cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
-            self.log_to_csv(img_event_obj=single_cascade)
+            #self.log_to_csv(img_event_obj=single_cascade)
 
 class Sequential_Cascade_Feeder():
     def __init__(self):
@@ -253,7 +253,7 @@ class Sequential_Cascade_Feeder():
                     p = Process(target=self.send_no_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
                     self.processing_pool.append(p)
-                    self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
+                    #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
@@ -261,7 +261,7 @@ class Sequential_Cascade_Feeder():
                     p = Process(target=self.send_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
                     self.processing_pool.append(p)
-                    self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
+                    #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.reset_cumuli_et_al()
                 else:
                     self.NO_PREY_FLAG = False
@@ -284,7 +284,7 @@ class Sequential_Cascade_Feeder():
                     p = Process(target=self.send_dk_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
                     self.processing_pool.append(p)
-                    self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
+                    #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                 self.reset_cumuli_et_al()
 
         if self.EVENT_FLAG and self.FACE_FOUND_FLAG:
