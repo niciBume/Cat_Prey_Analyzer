@@ -625,8 +625,8 @@ class Cascade:
 class NodeBot():
     def __init__(self):
         #Insert Chat ID and Bot Token according to Telegram API
-        self.CHAT_ID = 'XXXXXXXXXXXXXXXXXXXXXX'
-        self.BOT_TOKEN = 'XXXXXXXXXXXXXXXXXXXXXX'
+        #self.CHAT_ID = 'xxxxxxxxxxxxx'
+        #self.BOT_TOKEN = 'xxxxxxxxxxxxx'
 
         self.last_msg_id = 0
         self.bot_updater = Updater(token=self.BOT_TOKEN)
@@ -666,7 +666,7 @@ class NodeBot():
         bot_message = 'Following commands supported:'
         for command in self.commands:
             bot_message += '\n ' + command
-        bot.sendMessage(chat_id=update.message.chat_id, text=bot_message)
+        self.send_text(bot_message)
 
     def node_let_in(self, bot, update):
         self.node_let_in_flag = True
@@ -675,32 +675,32 @@ class NodeBot():
         for i in range(5):
             time.sleep(1)
             bot_message = 'Rebooting in ' + str(5-i) + ' seconds...'
-            bot.sendMessage(chat_id=update.message.chat_id, text=bot_message)
-        bot.sendMessage(chat_id=update.message.chat_id, text='See ya later Alligator 🐊🐊🐊')
+            self.send_text(bot_message)
+        self.send_text('See ya later Alligator 🐊🐊🐊')
         os.system("sudo reboot")
 
     def bot_send_last_casc_pic(self, bot, update):
         if self.node_last_casc_img is not None:
             cv2.imwrite('last_casc.jpg', self.node_last_casc_img)
             caption = 'Last Cascade!'
-            bot.send_photo(chat_id=update.message.chat_id, photo=open('last_casc.jpg', 'rb'), caption=caption)
+            self.send_img(self.node_last_casc_img, caption)
         else:
-            bot.sendMessage(chat_id=update.message.chat_id, text='No casc img available yet...')
+            self.send_text('No casc img available yet...')
 
     def bot_send_live_pic(self, bot, update):
         if self.node_live_img is not None:
             cv2.imwrite('live_img.jpg', self.node_live_img)
             caption = 'Here ya go...'
-            bot.send_photo(chat_id=update.message.chat_id, photo=open('live_img.jpg', 'rb'), caption=caption)
+            self.send_img(self.node_live_img, caption)
         else:
-            bot.sendMessage(chat_id=update.message.chat_id, text='No img available yet...')
+            self.send_text('No img available yet...')
 
     def bot_send_status(self, bot, update):
         if self.node_queue_info is not None and self.node_over_head_info is not None:
             bot_message = 'Queue length: ' + str(self.node_queue_info) + '\nOverhead: ' + str(self.node_over_head_info) + 's'
         else:
             bot_message = 'No info yet...'
-        bot.sendMessage(chat_id=update.message.chat_id, text=bot_message)
+        self.send_text(bot_message)
 
     def send_text(self, message):
         telegram.Bot(token=self.BOT_TOKEN).send_message(chat_id=self.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
