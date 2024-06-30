@@ -1,48 +1,42 @@
-import RPi.GPIO as GPIO
-from picamera.array import PiRGBArray
-from picamera import PiCamera
-from gpiozero import CPUTemperature
-
+import cv2
+import numpy as np
 from collections import deque
 import pytz
 from datetime import datetime
 from threading import Thread
 import time
-import sys
-import cv2
-import numpy as np
-import io, gc
+import gc
 
 class Camera:
-    def __init__(self,):
-        IRPin = 36
-        # GPIO Stuff
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(IRPin, GPIO.OUT)
-        GPIO.output(IRPin, GPIO.LOW)
-
-        time.sleep(2)
+    def __init__(self):
+        # Initialize HTTP stream URL
+        self.stream_url = "http://stream:somepass@localhost:9081/"
 
     def fill_queue(self, deque):
-        while(1):
+        cap = cv2.VideoCapture(self.stream_url)
+        if not cap.isOpened():
+            print("Error: Couldn't open the stream.")
+            return
+        
+        while True:
             gc.collect()
-            camera = PiCamera()
-            camera.framerate = 3
-            camera.vflip = False
-            camera.hflip = False
-            camera.resolution = (2592, 1944)
-            camera.exposure_mode = 'sports'
-            stream = io.BytesIO()
-            for i, frame in enumerate(camera.capture_continuous(stream, format="jpeg", use_video_port=True)):
-                stream.seek(0)
-                data = np.frombuffer(stream.getvalue(), dtype=np.uint8)
-                image = cv2.imdecode(data, 1)
-                deque.append(
-                    (datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f"), image))
-                #deque.pop()
-                print("Quelength: " + str(len(deque)) + "\tStreamsize: " + str(sys.getsizeof(stream)))
-                if i == 60:
-                    print("Loop ended, starting over.")
-                    camera.close()
-                    del camera
-                    break
+            ret, frame = cap.read()
+            if not ret:
+                print("Error: Couldn't read the frame.")
+                break
+
+            # Resize frame if necessary, currently keeping the original size
+            image = cv2.resize(frame, (2592, 1944))
+
+            deque.append(
+                (datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f"), image)
+            )
+            # deque.pop()
+            print("Quelength: " + str(len(deque)) + "\tFrame size: " + str(sys.getsizeof(frame)))
+
+            # Simulate the loop break and restart after 60 frames
+            if len(deque) >= 60:
+                print("Loop ended, starting over.")
+                break
+
+        cap.release()
