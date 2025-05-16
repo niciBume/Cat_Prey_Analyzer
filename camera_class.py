@@ -1,48 +1,57 @@
-import RPi.GPIO as GPIO
-from picamera.array import PiRGBArray
-from picamera import PiCamera
-from gpiozero import CPUTemperature
-
+from picamera2 import Picamera2
+from libcamera import controls, Transform
 from collections import deque
 import pytz
 from datetime import datetime
-from threading import Thread
-import time
-import sys
+import time, sys, gc
 import cv2
 import numpy as np
-import io, gc
+
+CAM_X = 1920
+CAM_Y = 1080
+
+CAM_HFLIP = 1
+CAM_VFLIP = 1
 
 class Camera:
-    def __init__(self,):
-        IRPin = 36
-        # GPIO Stuff
-        GPIO.setmode(GPIO.BOARD)
-        GPIO.setup(IRPin, GPIO.OUT)
-        GPIO.output(IRPin, GPIO.LOW)
+    def __init__(self):
+        self.picam2 = Picamera2()
+
+        video_cfg = self.picam2.create_video_configuration(
+            main={"size": (CAM_X, CAM_Y), "format": "RGB888"},
+            controls={"FrameRate": 6}  # Still queue at 2 FPS if desired
+            transform=Transform(hflip=CAM_HFLIP, vflip=CAM_VFLIP) 
+        )
+        self.picam2.configure(video_cfg)
+        self.picam2.start()
 
         time.sleep(2)
 
-    def fill_queue(self, deque):
-        while(1):
-            gc.collect()
-            camera = PiCamera()
-            camera.framerate = 3
-            camera.vflip = False
-            camera.hflip = False
-            camera.resolution = (2592, 1944)
-            camera.exposure_mode = 'sports'
-            stream = io.BytesIO()
-            for i, frame in enumerate(camera.capture_continuous(stream, format="jpeg", use_video_port=True)):
-                stream.seek(0)
-                data = np.frombuffer(stream.getvalue(), dtype=np.uint8)
-                image = cv2.imdecode(data, 1)
-                deque.append(
-                    (datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f"), image))
-                #deque.pop()
-                print("Quelength: " + str(len(deque)) + "\tStreamsize: " + str(sys.getsizeof(stream)))
-                if i == 60:
-                    print("Loop ended, starting over.")
-                    camera.close()
-                    del camera
-                    break
+    def _restart_camera(self):
+        self.picam2.stop()
+        self.picam2.close()
+        gc.collect()
+        self.__init__()
+
+    def fill_queue(self, q: deque):
+        i = 0
+        tz = pytz.timezone("Europe/Berlin")
+        last_enqueue_time = time.time()
+
+        while True:
+            rgb = self.picam2.capture_array("main")
+            now = time.time()
+            if now - last_enqueue_time >= 0.5:  # 2 FPS target
+                frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                timestamp = datetime.now(tz).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                q.append((timestamp, frame))
+                last_enqueue_time = now
+
+                print(f"Quelength: {len(q)}\tFrame shape: {frame.shape}")
+                i += 1
+
+                if i >= 60:
+                    print("Loop ended, restarting camera resources…")
+                    self._restart_camera()
+                    i = 0
+
