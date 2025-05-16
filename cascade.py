@@ -10,6 +10,7 @@ import telegram
 from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
 import xml.etree.ElementTree as ET
 import urllib.request
+import config
 
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
@@ -649,12 +650,8 @@ class Cascade:
 
 class NodeBot():
     def __init__(self):
-        #Insert Chat ID and Bot Token according to Telegram API
-        self.CHAT_ID = '1234567890'
-        self.BOT_TOKEN = '1234567890:AAEdFbGdrgTDhtEHEThetHE#534HherhETQ'
-
         self.last_msg_id = 0
-        self.bot_updater = Updater(token=self.BOT_TOKEN)
+        self.bot_updater = Updater(token=config.BOT_TOKEN)
         self.bot_dispatcher = self.bot_updater.dispatcher
         self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
 
@@ -669,7 +666,7 @@ class NodeBot():
         self.init_bot_listener()
 
     def init_bot_listener(self):
-        telegram.Bot(token=self.BOT_TOKEN).send_message(chat_id=self.CHAT_ID, text='Hi there, NodeBot is online!')
+        telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text='Hi there, NodeBot is online!')
         # Add all commands to handler
         help_handler = CommandHandler('help', self.bot_help_cmd)
         self.bot_dispatcher.add_handler(help_handler)
@@ -729,11 +726,11 @@ class NodeBot():
         self.send_text(bot_message)
 
     def send_text(self, message):
-        telegram.Bot(token=self.BOT_TOKEN).send_message(chat_id=self.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+        telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
 
     def send_img(self, img, caption):
         cv2.imwrite('degubi.jpg', img)
-        telegram.Bot(token=self.BOT_TOKEN).send_photo(chat_id=self.CHAT_ID, photo=open('degubi.jpg', 'rb'), caption=caption)
+        telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=open('degubi.jpg', 'rb'), caption=caption)
 
 class DummyDQueque():
     def __init__(self):
