@@ -9,13 +9,43 @@ from multiprocessing import Process
 import telegram
 from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
 import xml.etree.ElementTree as ET
+import urllib.request
 
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
 from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
-from CatPreyAnalyzer.camera_class import Camera
-cat_cam_py = str(Path(os.getcwd()).parents[0])
 
+import argparse
+import sys
+
+# Set up argument parser
+parser = argparse.ArgumentParser(description="Select camera source mode.")
+
+group = parser.add_mutually_exclusive_group()
+group.add_argument("--with-rtsp", action="store_true", help="Use RTSP camera stream")
+group.add_argument("--with-mjpeg", action="store_true", help="Use MJPEG camera stream")
+
+args = parser.parse_args()
+
+# Determine camera mode
+USE_PICAMERA = False
+USE_RTSP = False
+USE_MJPEG = False
+
+if args.with_rtsp:
+    USE_RTSP = True
+    print("Using RTSP camera stream.")
+    from CatPreyAnalyzer.camera_class_rtsp import Camera
+elif args.with_mjpeg:
+    USE_MJPEG = True
+    print("Using MJPEG camera stream.")
+    from CatPreyAnalyzer.camera_class_mjpeg import Camera
+else:
+    USE_PICAMERA = True
+    print("Using internal PiCamera2.")
+    from CatPreyAnalyzer.camera_class import Camera
+
+cat_cam_py = str(Path(os.getcwd()).parents[0])
 
 class Spec_Event_Handler():
     def __init__(self):
@@ -60,8 +90,8 @@ class Spec_Event_Handler():
                 single_cascade.ff_bbs_inference_time,
                 single_cascade.ff_haar_inference_time,
                 single_cascade.pc_inference_time]))
-            print("Total Inference Time:", single_cascade.total_inference_time)
-            print('Total Runtime:', time.time() - start_time)
+#           print("Total Inference Time:", single_cascade.total_inference_time)
+#           print('Total Runtime:', time.time() - start_time)
 
             # Write img to output dir and log csv of each event
             cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
@@ -70,7 +100,7 @@ class Spec_Event_Handler():
 class Sequential_Cascade_Feeder():
     def __init__(self):
         self.log_dir = os.path.join(os.getcwd(), 'log')
-        print('Log Dir:', self.log_dir)
+#       print('Log Dir:', self.log_dir)
         self.event_nr = 0
         self.base_cascade = Cascade()
         self.DEFAULT_FPS_OFFSET = 2
@@ -177,7 +207,7 @@ class Sequential_Cascade_Feeder():
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
         sender_img = event_objects[min_prey_index].output_img
-        caption = 'Cumuli: ' + str(cumuli) + ' => Cat is clean...' + ' 🐱' + event_str
+        caption = 'Cumuli: ' + str(cumuli) + ' => No prey, cat is clean...' + ' 🐱' + event_str
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -215,7 +245,7 @@ class Sequential_Cascade_Feeder():
         print('Timestamp at Done Runtime:', done_timestamp)
 
         overhead = datetime.strptime(done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(self.main_deque[self.fps_offset][0], "%Y_%m_%d_%H-%M-%S.%f")
-        print('Overhead:', overhead.total_seconds())
+#       print('Overhead:', overhead.total_seconds())
 
         #Add this such that the bot has some info
         self.bot.node_queue_info = len(self.main_deque)
@@ -254,6 +284,11 @@ class Sequential_Cascade_Feeder():
                     p.start()
                     self.processing_pool.append(p)
                     #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
+                    #---
+                    print('Cat is clean, unlocking the catflap temporarily')
+                    self.bot.send_text(message='Cat is clean, unlocking the catflap temporarily')
+                    self.open_catflap(open_time = 50)
+                    #===
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
@@ -299,8 +334,26 @@ class Sequential_Cascade_Feeder():
         target_img_name = 'dummy_img.jpg'
         target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
         cascade_obj = self.feed(target_img=target_img, img_name=target_img_name)[1]
-        print('Runtime:', time.time() - start_time)
+#       print('Runtime:', time.time() - start_time)
         return cascade_obj
+
+    def open_catflap(self, open_time):
+        req = urllib.request.Request(
+            url="http://192.168.178.24:8123/api/webhook/UnlockCatFlapNow",
+            method="POST"
+        )
+        with urllib.request.urlopen(req) as response:
+            contents = response.read()
+        #open_time = 50
+        self.bot.send_text('Catflap is unlocked for ' + str(open_time) + ' seconds.')
+        time.sleep(open_time)
+        req = urllib.request.Request(
+            url="http://192.168.178.24:8123/api/webhook/LockCatFlapNow",
+            method="POST"
+        )
+        with urllib.request.urlopen(req) as response:
+            contents = response.read()
+        self.bot.send_text('Catflap locked again, back to business.')
 
     def queque_handler(self):
         # Do this to force run all networks s.t. the network inference time stabilizes
@@ -323,45 +376,17 @@ class Sequential_Cascade_Feeder():
                 self.queque_worker()
 
             else:
-                print('Nothing to work with => Queque_length:', len(self.main_deque))
-                time.sleep(0.25)
+#               print('Nothing to work with => Queque_length:', len(self.main_deque))
+                time.sleep(0.15)
 
             #Check if user force opens the door
             if self.bot.node_let_in_flag == True:
+                #---
+                print("Temporary unlocking the catflap on user' behalf.")
+                self.bot.send_text(message="Temporary unlocking the catflap on user' behalf.")
+                self.open_catflap(open_time = 30)
+                #===
                 self.reset_cumuli_et_al()
-                open_time = 5
-                self.bot.send_text('Ok door is open for ' + str(open_time) + 's...')
-                time.sleep(open_time)
-                self.bot.send_text('Door locked again, back to business...')
-
-    def dummy_queque_handler(self):
-        # Do this to force run all networks s.t. the network inference time stabilizes
-        self.single_debug()
-
-        dummyque = DummyDQueque()
-        dummy_thread = Thread(target=dummyque.dummy_queque_filler, args=(self.main_deque,))
-        dummy_thread.start()
-
-        while(True):
-            if len(self.main_deque) > self.QUEQUE_MAX_THRESHOLD:
-                self.main_deque.clear()
-                print('DELETING QUEQUE BECAUSE OVERLOADED!')
-                self.bot.send_text(message='Running Hot... had to kill Queque!')
-
-            elif len(self.main_deque) > self.DEFAULT_FPS_OFFSET:
-                self.queque_worker()
-
-            else:
-                print('Nothing to work with => Queque_length:', len(self.main_deque))
-                time.sleep(0.25)
-
-            #Check if user force opens the door
-            if self.bot.node_let_in_flag == True:
-                self.reset_cumuli_et_al()
-                open_time = 5
-                self.bot.send_text('Ok door is open for ' + str(open_time) + 's...')
-                time.sleep(open_time)
-                self.bot.send_text('Door locked again, back to business...')
 
     def feed(self, target_img, img_name):
         target_event_obj = Event_Element(img_name=img_name, cc_target_img=target_img)
@@ -427,7 +452,7 @@ class Cascade:
         #Do CC
         start_time = time.time()
         dk_bool, cat_bool, bbs_target_img, pred_cc_bb_full, cc_inference_time = self.do_cc_mobile_stage(cc_target_img=cc_target_img)
-        print('CC_Do Time:', time.time() - start_time)
+#       print('CC_Do Time:', time.time() - start_time)
         event_img_object.cc_cat_bool = cat_bool
         event_img_object.cc_pred_bb = pred_cc_bb_full
         event_img_object.bbs_target_img = bbs_target_img
@@ -625,13 +650,13 @@ class Cascade:
 class NodeBot():
     def __init__(self):
         #Insert Chat ID and Bot Token according to Telegram API
-        #self.CHAT_ID = 'xxxxxxxxxxxxx'
-        #self.BOT_TOKEN = 'xxxxxxxxxxxxx'
+        self.CHAT_ID = '1234567890'
+        self.BOT_TOKEN = '1234567890:AAEdFbGdrgTDhtEHEThetHE#534HherhETQ'
 
         self.last_msg_id = 0
         self.bot_updater = Updater(token=self.BOT_TOKEN)
         self.bot_dispatcher = self.bot_updater.dispatcher
-        self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin', '/reboot']
+        self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
 
         self.node_live_img = None
         self.node_queue_info = None
@@ -644,7 +669,7 @@ class NodeBot():
         self.init_bot_listener()
 
     def init_bot_listener(self):
-        telegram.Bot(token=self.BOT_TOKEN).send_message(chat_id=self.CHAT_ID, text='Good Morning, NodeBot is online!' + '🤙')
+        telegram.Bot(token=self.BOT_TOKEN).send_message(chat_id=self.CHAT_ID, text='Hi there, NodeBot is online!')
         # Add all commands to handler
         help_handler = CommandHandler('help', self.bot_help_cmd)
         self.bot_dispatcher.add_handler(help_handler)
@@ -672,17 +697,18 @@ class NodeBot():
         self.node_let_in_flag = True
 
     def node_reboot(self, bot, update):
-        for i in range(5):
+        for i in range(15):
             time.sleep(1)
-            bot_message = 'Rebooting in ' + str(5-i) + ' seconds...'
+            bot_message = 'Rebooting in ' + str(15-i) + ' seconds...'
             self.send_text(bot_message)
-        self.send_text('See ya later Alligator 🐊🐊🐊')
-        os.system("sudo reboot")
+        self.send_text('See ya later Alligator')
+        #os.system("sudo reboot")
+        os.system("logger Cat_Prey_Analyzer called a reboot")
 
     def bot_send_last_casc_pic(self, bot, update):
         if self.node_last_casc_img is not None:
             cv2.imwrite('last_casc.jpg', self.node_last_casc_img)
-            caption = 'Last Cascade!'
+            caption = 'Last Cascade picture:'
             self.send_img(self.node_last_casc_img, caption)
         else:
             self.send_text('No casc img available yet...')
@@ -690,7 +716,7 @@ class NodeBot():
     def bot_send_live_pic(self, bot, update):
         if self.node_live_img is not None:
             cv2.imwrite('live_img.jpg', self.node_live_img)
-            caption = 'Here ya go...'
+            caption = 'Last live picture:'
             self.send_img(self.node_live_img, caption)
         else:
             self.send_text('No img available yet...')
@@ -715,7 +741,7 @@ class DummyDQueque():
 
     def dummy_queque_filler(self, main_deque):
         while(True):
-            img_name = datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f")
+            img_name = datetime.now(pytz.timezone('Europe/Berlin')).strftime("%Y_%m_%d_%H-%M-%S.%f")
             main_deque.append((img_name, self.target_img))
             print("Took image, que-length:", main_deque.__len__())
             time.sleep(0.4)
