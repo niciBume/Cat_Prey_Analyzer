@@ -11,6 +11,7 @@ from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
 import xml.etree.ElementTree as ET
 import urllib.request
 import config
+from requests import get
 
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
@@ -32,6 +33,8 @@ args = parser.parse_args()
 USE_PICAMERA = False
 USE_RTSP = False
 USE_MJPEG = False
+if hasattr(config, "HA_UNLOCK_WEBHOOK") and hasattr(config, "HA_LOCK_OUT_WEBHOOK") and hasattr(config, "HA_LOCK_ALL_WEBHOOK") and hasattr(config, "HA_REST_URL"):
+    USE_HA = True
 
 if args.with_rtsp:
     USE_RTSP = True
@@ -285,11 +288,10 @@ class Sequential_Cascade_Feeder():
                     p.start()
                     self.processing_pool.append(p)
                     #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
-                    #---
-                    print('Cat is clean, unlocking the catflap temporarily')
-                    self.bot.send_text(message='Cat is clean, unlocking the catflap temporarily')
-                    self.open_catflap(open_time = 50)
-                    #===
+                    if USE_HA == True:
+                        print('Cat is clean, unlocking the catflap temporarily')
+                        self.bot.send_text(message='Cat is clean, unlocking the catflap temporarily')
+                        self.open_catflap(open_time = 50)
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
@@ -339,22 +341,45 @@ class Sequential_Cascade_Feeder():
         return cascade_obj
 
     def open_catflap(self, open_time):
-        req = urllib.request.Request(
-            url="http://192.168.178.24:8123/api/webhook/UnlockCatFlapNow",
-            method="POST"
-        )
-        with urllib.request.urlopen(req) as response:
-            contents = response.read()
-        #open_time = 50
-        self.bot.send_text('Catflap is unlocked for ' + str(open_time) + ' seconds.')
-        time.sleep(open_time)
-        req = urllib.request.Request(
-            url="http://192.168.178.24:8123/api/webhook/LockCatFlapNow",
-            method="POST"
-        )
-        with urllib.request.urlopen(req) as response:
-            contents = response.read()
-        self.bot.send_text('Catflap locked again, back to business.')
+        # check current catflap state
+        headers = {
+            "Authorization": f"Bearer {config.HA_REST_TOKEN}",
+            "content-type": "application/json"
+        }
+        response = get(config.HA_REST_URL, headers=headers)
+        data = response.json()
+        catflap_state = data["state"]
+#       print(" #### catflap_state =" + catflap_state)
+
+        # unlock catflap
+        if catflap_state == "locked_out" or catflap_state == "locked_all":
+            req = urllib.request.Request(
+                url = config.HA_UNLOCK_WEBHOOK,
+                method = "POST"
+            )
+            with urllib.request.urlopen(req) as response:
+                contents = response.read()
+            self.bot.send_text('Catflap is [' + catflap_state + '], unlocking for ' + str(open_time) + ' seconds.')
+            time.sleep(open_time)
+
+            if catflap_state == "locked_out":
+                req = urllib.request.Request(
+                    url = config.HA_LOCK_OUT_WEBHOOK,
+                    method = "POST"
+                )
+                with urllib.request.urlopen(req) as response:
+                    contents = response.read()
+                self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
+            if catflap_state == "locked_all":
+                req = urllib.request.Request(
+                    url = config.HA_LOCK_ALL_WEBHOOK,
+                    method = "POST"
+                )
+                with urllib.request.urlopen(req) as response:
+                    contents = response.read()
+                self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
+        else:
+            self.bot.send_text('Catflap does not need unlocking, already set to: [' + catflap_state + '].')
 
     def queque_handler(self):
         # Do this to force run all networks s.t. the network inference time stabilizes
@@ -375,19 +400,18 @@ class Sequential_Cascade_Feeder():
 
             elif len(self.main_deque) > self.DEFAULT_FPS_OFFSET:
                 self.queque_worker()
-
             else:
 #               print('Nothing to work with => Queque_length:', len(self.main_deque))
                 time.sleep(0.15)
 
             #Check if user force opens the door
             if self.bot.node_let_in_flag == True:
-                #---
-                print("Temporary unlocking the catflap on user' behalf.")
-                self.bot.send_text(message="Temporary unlocking the catflap on user' behalf.")
-                self.open_catflap(open_time = 30)
-                #===
-                self.reset_cumuli_et_al()
+                if USE_HA == True:
+                    print("Temporary unlocking the catflap on user's behalf.")
+                    self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
+                    self.open_catflap(open_time = 30)
+                    self.reset_cumuli_et_al()
+
 
     def feed(self, target_img, img_name):
         target_event_obj = Event_Element(img_name=img_name, cc_target_img=target_img)
