@@ -11,7 +11,7 @@ class Camera:
     def __init__(self):
         self.cap = cv2.VideoCapture(MJPEG_STREAM_URL)
         if not self.cap.isOpened():
-            raise RuntimeError(f"Failed to open MJPEG stream: {MJPEG_STREAM_URL}")
+            raise RuntimeError(f"Failed to open MJPEG stream: {MJPEG_STREAM_URL}, restarting camera")
         time.sleep(2)
 
     def _restart_camera(self):
@@ -27,7 +27,7 @@ class Camera:
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                print("Failed to read frame from MJPEG stream.")
+                raise RuntimeError("Failed to read frame from MJPEG stream, restarting camera")
                 time.sleep(1)
                 self._restart_camera()
                 continue
@@ -42,7 +42,7 @@ class Camera:
                 i += 1
 
                 if i >= 60:
-                    print("Loop ended, restarting camera resources…")
+                    raise RuntimeError("Loop ended, restarting camera resources, restarting camera")
                     self._restart_camera()
                     i = 0
 

@@ -47,11 +47,11 @@ class Camera:
                 q.append((timestamp, frame))
                 last_enqueue_time = now
 
-                print(f"Quelength: {len(q)}\tFrame shape: {frame.shape}")
+                #print(f"Quelength: {len(q)}\tFrame shape: {frame.shape}")
                 i += 1
 
                 if i >= 60:
-                    print("Loop ended, restarting camera resources…")
+                    raise RuntimeError("Loop ended, restarting camera resources, restarting camera")
                     self._restart_camera()
                     i = 0
 

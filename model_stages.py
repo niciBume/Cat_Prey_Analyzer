@@ -6,7 +6,7 @@ import os, cv2, time, sys
 from object_detection.utils import label_map_util
 
 cat_cam_py = str(Path(os.getcwd()).parents[0])
-print('CatCamPy:', cat_cam_py)
+#print('CatCamPy: ', cat_cam_py)
 PC_models_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/models/Prey_Classifier')
 FF_models_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/models/Face_Fur_Classifier')
 EYE_models_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/models/Eye_Detector')
@@ -29,9 +29,9 @@ class CC_MobileNet_Stage():
         sys.path.append('..')
 
         # Grab path to current working directory
-        print(os.environ['PYTHONPATH'].split(os.pathsep)[1])
+        #print(os.environ['PYTHONPATH'].split(os.pathsep)[1])
         TF_OD_PATH = os.environ['PYTHONPATH'].split(os.pathsep)[1] + '/object_detection'
-        print(TF_OD_PATH)
+        #print(TF_OD_PATH)
 
         # Path to frozen detection graph .pb file, which contains the model that is used
         # for object detection.
@@ -83,7 +83,7 @@ class CC_MobileNet_Stage():
         # Number of objects detected
         num_detections = detection_graph.get_tensor_by_name('num_detections:0')
 
-        print('CNN is ready to go!')
+        #print('CNN is ready to go!')
 
         return sess, detection_boxes, detection_scores, detection_classes, num_detections, image_tensor, category_index
 
@@ -100,7 +100,7 @@ class CC_MobileNet_Stage():
                                                                     self.detection_scores, self.detection_classes,
                                                                     self.num_detections, self.image_tensor,
                                                                     self.category_index)
-        print('CC_time: ', inference_time)
+        #print('CC_time: %s', inference_time)
         return pred_cc_bb, pred_class, inference_time
 
     def draw_rectangle(self, img, box, color, text):
@@ -164,7 +164,7 @@ class Haar_Stage():
 
     def haar_do(self, target_img, full_img, cc_bbs):
         pred_bb, inference_time, haar_found_bool = self.haar_predict(input=target_img)
-        print('Haar_time: ', str('%.2f' % inference_time))
+        #print('Haar_time: ', str('%.2f' % inference_time))
 
         pred_bb_full = pred_bb[:]
 
@@ -264,9 +264,9 @@ class PC_Stage():
         }
         if 'F1' in self.pc_model_name:
             self.pc_model = tf.keras.models.load_model(os.path.join(PC_models_dir, self.pc_model_name),
-                                                       custom_objects=dependencies)
+                                                       custom_objects=dependencies, compile=False)
         else:
-            self.pc_model = tf.keras.models.load_model(os.path.join(PC_models_dir, self.pc_model_name))
+            self.pc_model = tf.keras.models.load_model(os.path.join(PC_models_dir, self.pc_model_name), compile=False)
 
     def get_f1(self, y_true, y_pred):  # taken from old keras source code
         K = tf.keras.backend
@@ -323,7 +323,7 @@ class FF_Stage():
         # Handle args
         self.models_dir = FF_models_dir
         self.ff_model_name = '256_05_mobileNet_50_Epochs_2020_05_07_14_56_25.h5'
-        self.ff_model = tf.keras.models.load_model(os.path.join(self.models_dir, self.ff_model_name))
+        self.ff_model = tf.keras.models.load_model(os.path.join(self.models_dir, self.ff_model_name), compile=False)
 
     def resize_img(self, img_org):
         return cv2.resize(img_org, (self.TARGET_SIZE, self.TARGET_SIZE)) * (1. / 255)
@@ -351,7 +351,7 @@ class Eye_Stage():
     def __init__(self):
         self.TARGET_SIZE = 224
         model_name = 'trainwhole100_Epochs_2020_04_30_18_05_25.h5'
-        self.eye_model = tf.keras.models.load_model(os.path.join(EYE_models_dir, model_name))
+        self.eye_model = tf.keras.models.load_model(os.path.join(EYE_models_dir, model_name), compile=False)
 
     def resize_img(self, img_resize):
         old_size = img_resize.shape[:2]  # old_size is in (height, width) format
