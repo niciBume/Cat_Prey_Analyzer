@@ -51,7 +51,7 @@ class Camera:
                 i += 1
 
                 if i >= 60:
-                    raise RuntimeError("Loop ended, restarting camera resources, restarting camera")
+                    print("Loop ended, restarting camera resources…")
                     self._restart_camera()
                     i = 0
 

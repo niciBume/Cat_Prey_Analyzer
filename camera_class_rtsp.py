@@ -11,7 +11,7 @@ class Camera:
     def __init__(self):
         self.cap = cv2.VideoCapture(RTSP_URL)
         if not self.cap.isOpened():
-            raise RuntimeError(f"Failed to open RTSP stream: {RTSP_URL}, restarting camera")
+            raise RuntimeError(f"Failed to open RTSP stream: {RTSP_URL}")
         time.sleep(2)
 
     def _restart_camera(self):
@@ -27,7 +27,7 @@ class Camera:
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                raise RuntimeError("Failed to read frame from RTSP stream, restarting camera")
+                print("Failed to read frame from RTSP stream, restarting camera resources…")
                 time.sleep(1)
                 self._restart_camera()
                 continue
@@ -42,7 +42,6 @@ class Camera:
                 i += 1
 
                 if i >= 60:
-                    raise RuntimeError("Loop ended, restarting camera resources, restarting camera")
+                    print("Loop ended, restarting camera resources…")
                     self._restart_camera()
                     i = 0
-
