@@ -25,8 +25,8 @@ loglevel = args.log.upper()  # Ensures the log level is uppercase
 
 logging.basicConfig(
     level=getattr(logging, loglevel, logging.INFO),  # Fallback to INFO if invalid
-    #format="%(asctime)s [%(levelname)s]: %(message)s",
-    format="%(asctime)s - %(message)s",
+    format="%(asctime)s [%(levelname)s]: %(message)s",
+    #format="%(asctime)s - %(message)s",
     filename='CatPreyAnalyzer.log',
     filemode='w+',
     datefmt='%m/%d/%Y-%I:%M:%S%p'
