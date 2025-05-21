@@ -495,7 +495,6 @@ class Cascade:
         #Do CC
         start_time = time.time()
         dk_bool, cat_bool, bbs_target_img, pred_cc_bb_full, cc_inference_time = self.do_cc_mobile_stage(cc_target_img=cc_target_img)
-        logging.debug('CC_time: %.2f', cc_inference_time)
         logging.debug('CC_Do Time: %.2f seconds', time.time() - start_time)
         event_img_object.cc_cat_bool = cat_bool
         event_img_object.cc_pred_bb = pred_cc_bb_full
