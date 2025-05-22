@@ -3,7 +3,9 @@ import pytz
 from datetime import datetime
 import time, gc
 import cv2
-import numpy as np
+import logging
+
+logging = logging.getLogger(__name__)
 
 RTSP_URL = "rtsp://stream:P4Vdo@192.168.178.59:8554/unicast"  # Replace with your RTSP stream URL
 
@@ -27,7 +29,7 @@ class Camera:
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                print("Failed to read frame from RTSP stream.")
+                logging.debug("Failed to read frame from RTSP stream, restarting camera resources…")
                 time.sleep(1)
                 self._restart_camera()
                 continue
@@ -38,11 +40,10 @@ class Camera:
                 q.append((timestamp, frame))
                 last_enqueue_time = now
 
-                print(f"Quelength: {len(q)}\tFrame shape: {frame.shape}")
+                logging.debug("Quelength: %d    Frame shape: %s", len(q), frame.shape)
                 i += 1
 
                 if i >= 60:
-                    print("Loop ended, restarting camera resources…")
+                    logging.info("Loop ended, restarting camera resources…")
                     self._restart_camera()
                     i = 0
-

@@ -6,6 +6,9 @@ from datetime import datetime
 import time, sys, gc
 import cv2
 import numpy as np
+import logging
+
+logging = logging.getLogger(__name__)
 
 CAM_X = 1920
 CAM_Y = 1080
@@ -19,7 +22,7 @@ class Camera:
 
         video_cfg = self.picam2.create_video_configuration(
             main={"size": (CAM_X, CAM_Y), "format": "RGB888"},
-            controls={"FrameRate": 6}  # Still queue at 2 FPS if desired
+            controls={"FrameRate": 6},  # Still queue at 2 FPS if desired
             transform=Transform(hflip=CAM_HFLIP, vflip=CAM_VFLIP) 
         )
         self.picam2.configure(video_cfg)
@@ -47,11 +50,11 @@ class Camera:
                 q.append((timestamp, frame))
                 last_enqueue_time = now
 
-                print(f"Quelength: {len(q)}\tFrame shape: {frame.shape}")
+                logging.debug("Quelength: %d    Frame shape: %s", len(q), frame.shape)
                 i += 1
 
                 if i >= 60:
-                    print("Loop ended, restarting camera resources…")
+                    logging.info("Loop ended, restarting camera resources…")
                     self._restart_camera()
                     i = 0
 

@@ -3,7 +3,9 @@ import pytz
 from datetime import datetime
 import time, gc
 import cv2
-import numpy as np
+import logging
+
+logging = logging.getLogger(__name__)
 
 MJPEG_STREAM_URL = "http://localhost:9000/mjpg"  # Replace with your MJPEG stream URL
 
@@ -11,7 +13,7 @@ class Camera:
     def __init__(self):
         self.cap = cv2.VideoCapture(MJPEG_STREAM_URL)
         if not self.cap.isOpened():
-            raise RuntimeError(f"Failed to open MJPEG stream: {MJPEG_STREAM_URL}")
+            raise RuntimeError(f"Failed to open MJPEG stream: {MJPEG_STREAM_URL}, restarting camera")
         time.sleep(2)
 
     def _restart_camera(self):
@@ -27,7 +29,7 @@ class Camera:
         while True:
             ret, frame = self.cap.read()
             if not ret:
-                print("Failed to read frame from MJPEG stream.")
+                logging.info("Failed to read frame from MJPEG stream, restarting camera resources…")
                 time.sleep(1)
                 self._restart_camera()
                 continue
@@ -38,11 +40,11 @@ class Camera:
                 q.append((timestamp, frame))
                 last_enqueue_time = now
 
-                print(f"Quelength: {len(q)}\tFrame shape: {frame.shape}")
+                logging.debug("Quelength: %d    Frame shape: %s", len(q), frame.shape)
                 i += 1
 
                 if i >= 60:
-                    print("Loop ended, restarting camera resources…")
+                    logging.info("Loop ended, restarting camera resources…")
                     self._restart_camera()
                     i = 0
 
