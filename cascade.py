@@ -58,7 +58,11 @@ USE_PICAMERA = USE_RTSP = USE_MJPEG = False
 
 # Determine if using home assistant catflap control
 USE_HA = False
-if hasattr(config, "HA_UNLOCK_WEBHOOK") and hasattr(config, "HA_LOCK_OUT_WEBHOOK") and hasattr(config, "HA_LOCK_ALL_WEBHOOK") and hasattr(config, "HA_REST_URL"):
+
+# Define required HA config attributes
+HA_REQUIRED_ATTRS = ["HA_UNLOCK_WEBHOOK", "HA_LOCK_OUT_WEBHOOK", "HA_LOCK_ALL_WEBHOOK", "HA_REST_URL"]
+# Check if all required attributes exist
+if all(hasattr(config, attr) for attr in HA_REQUIRED_ATTRS):
     USE_HA = True
 
 if args.with_rtsp:
@@ -308,7 +312,7 @@ class Sequential_Cascade_Feeder():
                     p.start()
                     self.processing_pool.append(p)
                     #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
-                    if USE_HA == True:
+                    if USE_HA:
                         logging.info('Cat is clean, unlocking the catflap temporarily')
                         self.bot.send_text(message='Cat is clean, unlocking the catflap temporarily')
                         self.open_catflap(open_time = 50)
@@ -334,7 +338,7 @@ class Sequential_Cascade_Feeder():
             self.event_reset_counter += 1
             if self.event_reset_counter >= self.event_reset_threshold:
                 # If was True => event now over => clear queque
-                if self.EVENT_FLAG == True:
+                if self.EVENT_FLAG:
                     logging.debug('CLEARED QUEQUE BECAUSE EVENT OVER WITHOUT CONCLUSION...')
                     #TODO QUICK FIX
                     if self.face_counter == 0:
@@ -440,12 +444,11 @@ class Sequential_Cascade_Feeder():
                 time.sleep(0.15)
 
             #Check if user force opens the door
-            if self.bot.node_let_in_flag == True:
-                if USE_HA == True:
-                    logging.info("Temporary unlocking the catflap on user's behalf.")
-                    self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
-                    self.open_catflap(open_time = 30)
-                    self.reset_cumuli_et_al()
+            if self.bot.node_let_in_flag and USE_HA:
+                logging.info("Temporary unlocking the catflap on user's behalf.")
+                self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
+                self.open_catflap(open_time = 30)
+                self.reset_cumuli_et_al()
 
 
     def feed(self, target_img, img_name):
