@@ -46,16 +46,18 @@ from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
 import xml.etree.ElementTree as ET
 import urllib.request
 import config
-from requests import get
+import contextlib
+import requests
 
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
 from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
 
 # Determine camera mode
-USE_PICAMERA = False
-USE_RTSP = False
-USE_MJPEG = False
+USE_PICAMERA = USE_RTSP = USE_MJPEG = False
+
+# Determine if using home assistant catflap control
+USE_HA = False
 if hasattr(config, "HA_UNLOCK_WEBHOOK") and hasattr(config, "HA_LOCK_OUT_WEBHOOK") and hasattr(config, "HA_LOCK_ALL_WEBHOOK") and hasattr(config, "HA_REST_URL"):
     USE_HA = True
 
@@ -294,7 +296,7 @@ class Sequential_Cascade_Feeder():
                 self.cumulus_points += (50 - int(round(100 * cascade_obj.pc_prey_val)))
                 self.FACE_FOUND_FLAG = True
 
-            logging.debug(f'CUMULUS: {self.cumulus_points}')
+            logging.debug('CUMULUS: %d', self.cumulus_points)
             self.queues_cumuli_in_event.append((len(self.main_deque),self.cumulus_points, done_timestamp))
 
             #Check the cumuli points and set flags if necessary
@@ -364,8 +366,16 @@ class Sequential_Cascade_Feeder():
             "Authorization": f"Bearer {config.HA_REST_TOKEN}",
             "content-type": "application/json"
         }
-        response = get(config.HA_REST_URL, headers=headers)
-        data = response.json()
+        #response = get(config.HA_REST_URL, headers=headers)
+        #data = response.json()
+        try:
+            response = requests.get(config.HA_REST_URL, headers=headers, timeout=5)
+            response.raise_for_status()
+            data = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            logging.error("Could not query catflap state: %s", exc)
+            self.bot.send_text("⚠️  Could not query catflap state – aborting unlock.")
+            return
         catflap_state = data["state"]
         logging.info(' #### catflap_state = %s', catflap_state)
 
@@ -375,8 +385,11 @@ class Sequential_Cascade_Feeder():
                 url = config.HA_UNLOCK_WEBHOOK,
                 method = "POST"
             )
-            with urllib.request.urlopen(req) as response:
-                contents = response.read()
+            #with urllib.request.urlopen(req) as response:
+            #    contents = response.read()
+            # Fire-and-forget: no need to keep the body in memory
+            with contextlib.closing(urllib.request.urlopen(req)):
+                pass
             self.bot.send_text('Catflap is [' + catflap_state + '], unlocking for ' + str(open_time) + ' seconds.')
             time.sleep(open_time)
 
@@ -385,16 +398,20 @@ class Sequential_Cascade_Feeder():
                     url = config.HA_LOCK_OUT_WEBHOOK,
                     method = "POST"
                 )
-                with urllib.request.urlopen(req) as response:
-                    contents = response.read()
+                #with urllib.request.urlopen(req) as response:
+                #    contents = response.read()
+                with contextlib.closing(urllib.request.urlopen(req)):
+                    pass
                 self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
             if catflap_state == "locked_all":
                 req = urllib.request.Request(
                     url = config.HA_LOCK_ALL_WEBHOOK,
                     method = "POST"
                 )
-                with urllib.request.urlopen(req) as response:
-                    contents = response.read()
+                #with urllib.request.urlopen(req) as response:
+                #    contents = response.read()
+                with contextlib.closing(urllib.request.urlopen(req)):
+                    pass
                 self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
         else:
             self.bot.send_text('Catflap does not need unlocking, already set to: [' + catflap_state + '].')
@@ -511,7 +528,6 @@ class Cascade:
 
             event_img_object.haar_pred_bb = haar_bbs
             event_img_object.haar_inference_time = haar_inference_time
-            logging.debug('Haar_time: %.2f', haar_inference_time)
 
             if haar_found_bool and haar_snout_crop.size != 0 and self.cc_haar_overlap(cc_bbs=pred_cc_bb_full, haar_bbs=haar_bbs) >= 0.1:
                 inf_bb = haar_bbs
@@ -773,7 +789,9 @@ class NodeBot():
 
     def send_img(self, img, caption):
         cv2.imwrite('degubi.jpg', img)
-        telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=open('degubi.jpg', 'rb'), caption=caption)
+        #telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=open('degubi.jpg', 'rb'), caption=caption)
+        with open('degubi.jpg', 'rb') as fh:
+            telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=fh, caption=caption)
 
 class DummyDQueque():
     def __init__(self):
