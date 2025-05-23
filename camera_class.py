@@ -18,58 +18,76 @@ except ImportError:
     LIBCAMERA_AVAILABLE = False
 
 class Camera:
-    def __init__(self, q: deque):
+    def __init__(self, q: deque, camera_url=None):
         self.q = q
         self._stop_event = threading.Event()
         self.previous_gray = None
-        self.motion_threshold = config.MOTION_THRESHOLD
+
+        # Default motion threshold fallback
+        self.motion_threshold = getattr(config, 'MOTION_THRESHOLD', 2.5)
         self.motion_scores = []
 
-        # Determine camera type based on CAMERA_URL
+        # Use the passed camera_url or fallback to config
+        self.camera_url = camera_url or getattr(config, 'CAMERA_URL', '')
+
+        # Determine camera type based on camera_url
         self.camera_type = self._detect_camera_type()
         self.capture = None
 
         # Initialize the appropriate camera source
-        if self.camera_type == "libcamera" and LIBCAMERA_AVAILABLE:
-            self.picam2 = Picamera2()
-            video_cfg = self.picam2.create_video_configuration(
-                main={"size": (config.CAM_X, config.CAM_Y), "format": "RGB888"},
-                controls={"FrameRate": 6},
-                transform=Transform(hflip=config.CAM_HFLIP, vflip=config.CAM_VFLIP)
-            )
-            self.picam2.configure(video_cfg)
-            self.picam2.start()
-            time.sleep(2)
-
-        elif self.camera_type in ["mjpeg", "rtsp", "usb", "video"]:
-            self.capture = cv2.VideoCapture(CAMERA_URL)
-            if self.camera_type == "usb":
-                # USB webcam settings
-                self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAM_X)
-                self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAM_Y)
-                self.capture.set(cv2.CAP_PROP_FPS, 6)
-            if not self.capture.isOpened():
-                raise RuntimeError(f"Failed to open stream: {CAMERA_URL}")
-        else:
-            raise ValueError("Unsupported camera source or missing dependencies")
+        self._initialize_camera()
 
         # Start capture loop in separate thread
         self.capture_thread = threading.Thread(target=self._fill_queue_loop, daemon=True)
         self.capture_thread.start()
 
     def _detect_camera_type(self):
-        if not CAMERA_URL:
+        if not self.camera_url:
+            logging.info("Using internal PiCamera2.")
             return "libcamera"
-        if CAMERA_URL.startswith("rtsp://"):
+        if self.camera_url.startswith("rtsp://"):
+            logging.info("Using RTSP camera stream.")
             return "rtsp"
-        if CAMERA_URL.startswith("http://") or CAMERA_URL.startswith("https://"):
+        if self.camera_url.startswith("http://") or self.camera_url.startswith("https://"):
+            logging.info("Using MJPEG camera stream.")
             return "mjpeg"
-        if CAMERA_URL.isdigit():
-            CAMERA_URL = int(CAMERA_URL)
+        if self.camera_url.isdigit():
+            self.camera_url = int(self.camera_url)
+            logging.info("Using USB Camera.")
             return "usb"
-        if CAMERA_URL.endswith(".mp4") or CAMERA_URL.endswith(".avi"):
+        if self.camera_url.endswith(".mp4") or self.camera_url.endswith(".avi"):
+            logging.info("Using avi/mp4 video file.")
             return "video"
         raise ValueError("Unsupported CAMERA_URL format")
+
+    def _initialize_camera(self):
+        retries = 5
+        delay = 2
+        for attempt in range(retries):
+            try:
+                if self.camera_type == "libcamera" and LIBCAMERA_AVAILABLE:
+                    self.picam2 = Picamera2()
+                    video_cfg = self.picam2.create_video_configuration(
+                        main={"size": (config.CAM_X, config.CAM_Y), "format": "RGB888"},
+                        controls={"FrameRate": 6},
+                        transform=Transform(hflip=config.CAM_HFLIP, vflip=config.CAM_VFLIP)
+                    )
+                    self.picam2.configure(video_cfg)
+                    self.picam2.start()
+                    time.sleep(2)
+                else:
+                    self.capture = cv2.VideoCapture(self.camera_url)
+                    if self.camera_type == "usb":
+                        self.capture.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAM_X)
+                        self.capture.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAM_Y)
+                        self.capture.set(cv2.CAP_PROP_FPS, 6)
+                    if not self.capture.isOpened():
+                        raise RuntimeError(f"Failed to open stream: {self.camera_url}")
+                return
+            except Exception as e:
+                logging.warning("Attempt %d to initialize camera failed: %s", attempt + 1, e)
+                time.sleep(delay)
+        raise RuntimeError(f"Unable to initialize camera after {retries} attempts")
 
     def stop(self):
         self._stop_event.set()
@@ -84,7 +102,7 @@ class Camera:
         elif self.capture:
             self.capture.release()
         gc.collect()
-        self.__init__(self.q)
+        self._initialize_camera()
 
     def _update_motion_average(self, score, window_size=5):
         self.motion_scores.append(score)
@@ -104,9 +122,18 @@ class Camera:
 
             if now - last_config_reload > config_reload_interval:
                 importlib.reload(config)
-                motion_thresholds = config.MOTION_THRESHOLDS
-                enqueue_intervals = config.ENQUEUE_INTERVALS
-                self.motion_threshold = config.MOTION_THRESHOLD
+                motion_thresholds = getattr(config, 'MOTION_THRESHOLDS', {
+                    "low": 2.0,
+                    "medium": 5.0,
+                    "high": 10.0
+                })
+                enqueue_intervals = getattr(config, 'ENQUEUE_INTERVALS', {
+                    "slow": 1.5,
+                    "medium": 1.0,
+                    "fast": 0.5,
+                    "max": 0.1
+                })
+                self.motion_threshold = getattr(config, 'MOTION_THRESHOLD', 2.5)
                 last_config_reload = now
 
                 logging.debug(
@@ -121,8 +148,8 @@ class Camera:
             else:
                 ret, frame = self.capture.read()
                 if not ret:
-                    logging.warning("Failed to read from stream")
-                    time.sleep(1)
+                    logging.warning("Failed to read from stream, restarting camera…")
+                    self._restart_camera()
                     continue
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
