@@ -121,6 +121,8 @@ class Camera:
         last_forced_enqueue = time.time()
         forced_enqueue_interval = getattr(config, 'FORCED_ENQUEUE_INTERVAL', 60)
         first_frame = True
+        read_fail_count = 0
+        max_read_failures = 10
 
         while not self._stop_event.is_set():
             now = time.time()
@@ -151,12 +153,20 @@ class Camera:
             if self.camera_type == "libcamera" and LIBCAMERA_AVAILABLE:
                 rgb = self.picam2.capture_array("main")
                 frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+                read_fail_count = 0
             else:
                 ret, frame = self.capture.read()
-                if not ret:
-                    logging.warning("Failed to read from stream, restarting camera…")
-                    self._restart_camera()
+                if not ret or frame is None or frame.size == 0:
+                    read_fail_count += 1
+                    logging.warning("Failed to read frame (%d/%d)", read_fail_count, max_read_failures)
+                    time.sleep(0.5)
+                    if read_fail_count >= max_read_failures:
+                        logging.error("Too many failed reads. Restarting camera stream.")
+                        self._restart_camera()
+                        read_fail_count = 0
                     continue
+                else:
+                    read_fail_count = 0
 
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
