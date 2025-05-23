@@ -9,6 +9,7 @@ import importlib
 from datetime import datetime
 from collections import deque
 import config
+import argparse
 
 # Conditionally import Picamera2 if available
 try:
@@ -27,8 +28,8 @@ class Camera:
         self.motion_threshold = getattr(config, 'MOTION_THRESHOLD', 2.5)
         self.motion_scores = []
 
-        # Use the passed camera_url or fallback to config
-        self.camera_url = camera_url or getattr(config, 'CAMERA_URL', '')
+        # Use the passed camera_url directly
+        self.camera_url = camera_url
 
         # Determine camera type based on camera_url
         self.camera_type = self._detect_camera_type()
@@ -45,16 +46,16 @@ class Camera:
         if not self.camera_url:
             logging.info("Using internal PiCamera2.")
             return "libcamera"
+        if isinstance(self.camera_url, int) or (isinstance(self.camera_url, str) and self.camera_url.isdigit()):
+            self.camera_url = int(self.camera_url)
+            logging.info("Using USB Camera.")
+            return "usb"
         if self.camera_url.startswith("rtsp://"):
             logging.info("Using RTSP camera stream.")
             return "rtsp"
         if self.camera_url.startswith("http://") or self.camera_url.startswith("https://"):
             logging.info("Using MJPEG camera stream.")
             return "mjpeg"
-        if self.camera_url.isdigit():
-            self.camera_url = int(self.camera_url)
-            logging.info("Using USB Camera.")
-            return "usb"
         if self.camera_url.endswith(".mp4") or self.camera_url.endswith(".avi"):
             logging.info("Using avi/mp4 video file.")
             return "video"
@@ -117,6 +118,10 @@ class Camera:
         last_config_reload = 0
         config_reload_interval = 5  # seconds
 
+        last_forced_enqueue = time.time()
+        forced_enqueue_interval = getattr(config, 'FORCED_ENQUEUE_INTERVAL', 60)
+        first_frame = True
+
         while not self._stop_event.is_set():
             now = time.time()
 
@@ -134,11 +139,12 @@ class Camera:
                     "max": 0.1
                 })
                 self.motion_threshold = getattr(config, 'MOTION_THRESHOLD', 2.5)
+                forced_enqueue_interval = getattr(config, 'FORCED_ENQUEUE_INTERVAL', 60)
                 last_config_reload = now
 
                 logging.debug(
-                    "Reloaded config: thresholds=%s, intervals=%s, motion_threshold=%.2f",
-                    motion_thresholds, enqueue_intervals, self.motion_threshold
+                    "Reloaded config: thresholds=%s, intervals=%s, motion_threshold=%.2f, forced_interval=%.1f",
+                    motion_thresholds, enqueue_intervals, self.motion_threshold, forced_enqueue_interval
                 )
 
             # Capture frame from camera
@@ -155,6 +161,7 @@ class Camera:
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             # Motion detection via frame differencing
+            should_enqueue = False
             if self.previous_gray is not None:
                 diff = cv2.absdiff(self.previous_gray, gray)
                 non_zero_count = np.sum(diff > 15)
@@ -171,20 +178,25 @@ class Camera:
                 else:
                     enqueue_interval = enqueue_intervals["slow"]
 
-                if avg_motion < self.motion_threshold:
-                    logging.debug("Low motion (%.2f%%), skipping frame.", avg_motion)
-                    time.sleep(enqueue_interval)
-                    continue
+                should_enqueue = avg_motion >= self.motion_threshold
+
+            if first_frame or (now - last_forced_enqueue > forced_enqueue_interval):
+                should_enqueue = True
+                logging.debug("Forcing enqueue due to time/first-frame condition.")
 
             self.previous_gray = gray.copy()
 
-            # Timestamp and enqueue
-            timestamp = datetime.now(tz).strftime("%Y_%m_%d_%H-%M-%S.%f")
-            if len(self.q) < config.MAX_QUEUE_LEN:
-                self.q.append((timestamp, frame))
-                logging.debug("Enqueued frame. Queue length: %d", len(self.q))
+            if should_enqueue:
+                timestamp = datetime.now(tz).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                if len(self.q) < config.MAX_QUEUE_LEN:
+                    self.q.append((timestamp, frame))
+                    logging.debug("Enqueued frame. Queue length: %d", len(self.q))
+                else:
+                    logging.warning("Queue is full. Frame dropped.")
+                first_frame = False
+                last_forced_enqueue = now
             else:
-                logging.warning("Queue is full. Frame dropped.")
+                logging.debug("Low motion, skipping frame.")
 
             i += 1
             time.sleep(enqueue_interval)
