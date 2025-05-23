@@ -426,9 +426,6 @@ class Sequential_Cascade_Feeder():
         self.main_deque = deque(maxlen=config.MAX_QUEUE_LEN)
         camera = Camera(self.main_deque, camera_url=CAMERA_URL)
 
-        camera_thread = Thread(target=camera.fill_queue, args=(self.main_deque,), daemon=True)
-        camera_thread.start()
-
         while(True):
             if len(self.main_deque) > self.QUEQUE_MAX_THRESHOLD:
                 self.main_deque.clear()
