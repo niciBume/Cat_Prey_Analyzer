@@ -66,6 +66,7 @@ import requests
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
 from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
+from collections import deque
 from camera_class import Camera
 
 # Determine if using home assistant catflap control
@@ -422,7 +423,9 @@ class Sequential_Cascade_Feeder():
         # Do this to force run all networks s.t. the network inference time stabilizes
         self.single_debug()
 
-        camera = Camera()
+        self.main_deque = deque(maxlen=config.MAX_QUEUE_LEN)
+        camera = Camera(self.main_deque, camera_url=CAMERA_URL)
+
         camera_thread = Thread(target=camera.fill_queue, args=(self.main_deque,), daemon=True)
         camera_thread.start()
 
