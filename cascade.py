@@ -15,11 +15,23 @@ whether a cat is bringing prey and manage flap control.
     formatter_class=argparse.RawTextHelpFormatter
 )
 
-parser.add_argument("--with-rtsp", action="store_true", help="Use RTSP camera stream")
-parser.add_argument("--with-mjpeg", action="store_true", help="Use MJPEG camera stream")
+CAMERA_URL = None
 parser.add_argument("--log", default="INFO", help="Set the logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+parser.add_argument(
+        "--camera-url",
+        type=str,
+        help="""Set camera input source:
+          - libcamera (default, if parameter not set)
+          - MJPEG stream (http://...)
+          - RTSP stream (rtsp://...)
+          - USB webcam (CAMERA_URL is digit)
+          - Video file (if URL is a file, ending in avi/mp4)
+        """,
+        )
 
 args = parser.parse_args()
+if args.camera_url:
+    CAMERA_URL = args.camera_url
 
 loglevel = args.log.upper()  # Ensures the log level is uppercase
 
@@ -37,6 +49,7 @@ import numpy as np
 from pathlib import Path
 import os, cv2, time, csv, sys, gc
 import pytz
+import time
 from datetime import datetime
 from collections import deque
 from threading import Thread
@@ -47,14 +60,13 @@ import xml.etree.ElementTree as ET
 import urllib.request
 import config
 import contextlib
+import importlib
 import requests
 
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
 from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
-
-# Determine camera mode
-USE_PICAMERA = USE_RTSP = USE_MJPEG = False
+from camera_class import Camera
 
 # Determine if using home assistant catflap control
 USE_HA = False
@@ -65,21 +77,7 @@ HA_REQUIRED_ATTRS = ["HA_UNLOCK_WEBHOOK", "HA_LOCK_OUT_WEBHOOK", "HA_LOCK_ALL_WE
 if all(hasattr(config, attr) for attr in HA_REQUIRED_ATTRS):
     USE_HA = True
 
-if args.with_rtsp:
-    USE_RTSP = True
-    logging.info("Using RTSP camera stream.")
-    from CatPreyAnalyzer.camera_class_rtsp import Camera
-elif args.with_mjpeg:
-    USE_MJPEG = True
-    logging.info("Using MJPEG camera stream.")
-    from CatPreyAnalyzer.camera_class_mjpeg import Camera
-else:
-    USE_PICAMERA = True
-    logging.info("Using internal PiCamera2.")
-    from CatPreyAnalyzer.camera_class import Camera
-
 cat_cam_py = str(Path(os.getcwd()).parents[0])
-logging.debug('CatCamPy: %s', cat_cam_py)
 
 class Spec_Event_Handler():
     def __init__(self):
