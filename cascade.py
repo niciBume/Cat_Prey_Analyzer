@@ -44,6 +44,7 @@ logging.basicConfig(
     datefmt='%m/%d/%Y-%I:%M:%S%p'
 )
 logging.info('Starting CatPreyAnalyzer...')
+logging.info("Using following CAMERA_URL: %s", CAMERA_URL)
 
 import numpy as np
 from pathlib import Path
@@ -62,6 +63,7 @@ import config
 import contextlib
 import importlib
 import requests
+from io import BytesIO
 
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
@@ -772,11 +774,35 @@ class NodeBot():
 
     def bot_send_live_pic(self, bot, update):
         if self.node_live_img is not None:
-            cv2.imwrite('live_img.jpg', self.node_live_img)
-            caption = 'Last live picture:'
-            self.send_img(self.node_live_img, caption)
+            # Encode image to JPEG format
+            ret, jpeg = cv2.imencode('.jpg', self.node_live_img)
+            if ret:
+                # Convert to bytes
+                img_bytes = jpeg.tobytes()
+                caption = 'Last live picture:'
+                self.send_img(img_bytes, caption, is_encoded=True)
+            else:
+                self.send_text('Failed to encode image.')
         else:
             self.send_text('No img available yet...')
+
+    def send_img(self, img, caption, is_encoded=False):
+        if not is_encoded:
+            ret, jpeg = cv2.imencode('.jpg', img)
+            if not ret:
+                self.send_text('Image encoding failed.')
+                return
+            img = jpeg.tobytes()
+
+        # Wrap bytes in a file-like object
+        image_file = BytesIO(img)
+        image_file.name = 'live.jpg'  # Important for Telegram to recognize format
+
+        telegram.Bot(token=config.BOT_TOKEN).send_photo(
+            chat_id=config.CHAT_ID,
+            photo=image_file,
+            caption=caption
+        )
 
     def bot_send_status(self, bot, update):
         if self.node_queue_info is not None and self.node_over_head_info is not None:
@@ -787,12 +813,6 @@ class NodeBot():
 
     def send_text(self, message):
         telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
-
-    def send_img(self, img, caption):
-        cv2.imwrite('degubi.jpg', img)
-        #telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=open('degubi.jpg', 'rb'), caption=caption)
-        with open('degubi.jpg', 'rb') as fh:
-            telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=fh, caption=caption)
 
 class DummyDQueque():
     def __init__(self):
