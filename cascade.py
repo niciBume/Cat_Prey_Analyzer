@@ -53,7 +53,7 @@ import pytz
 import time
 from datetime import datetime
 from collections import deque
-from threading import Thread
+import threading
 from multiprocessing import Process
 import telegram
 from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
@@ -68,7 +68,6 @@ from io import BytesIO
 sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
 from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
-from collections import deque
 from camera_class import Camera
 
 # Determine if using home assistant catflap control
@@ -81,6 +80,7 @@ if all(hasattr(config, attr) for attr in HA_REQUIRED_ATTRS):
     USE_HA = True
 
 cat_cam_py = str(Path(os.getcwd()).parents[0])
+logging.debug('CatCamPy: %s', cat_cam_py)
 
 class Spec_Event_Handler():
     def __init__(self):
@@ -141,7 +141,7 @@ class Sequential_Cascade_Feeder():
         self.DEFAULT_FPS_OFFSET = 2
         self.QUEQUE_MAX_THRESHOLD = 30
         self.fps_offset = self.DEFAULT_FPS_OFFSET
-        self.MAX_PROCESSES = 5
+        self.MAX_PROCESSES = 7
         self.EVENT_FLAG = False
         self.event_objects = []
         self.patience_counter = 0
@@ -425,8 +425,9 @@ class Sequential_Cascade_Feeder():
         # Do this to force run all networks s.t. the network inference time stabilizes
         self.single_debug()
 
-        self.main_deque = deque(maxlen=config.MAX_QUEUE_LEN)
-        camera = Camera(self.main_deque, camera_url=CAMERA_URL)
+        camera = Camera(q=self.main_deque, camera_url=CAMERA_URL)
+        camera_thread = threading.Thread(target=camera._fill_queue_loop, daemon=True)
+        camera_thread.start()
 
         while(True):
             if len(self.main_deque) > self.QUEQUE_MAX_THRESHOLD:
@@ -434,9 +435,8 @@ class Sequential_Cascade_Feeder():
                 self.reset_cumuli_et_al()
                 # Clean up garbage
                 gc.collect()
-                logging.debug('DELETING QUEQUE BECAUSE OVERLOADED!')
+                print('DELETING QUEQUE BECAUSE OVERLOADED!')
                 self.bot.send_text(message='Running Hot... had to kill Queque!')
-
             elif len(self.main_deque) > self.DEFAULT_FPS_OFFSET:
                 self.queque_worker()
             else:
@@ -449,7 +449,6 @@ class Sequential_Cascade_Feeder():
                 self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
                 self.open_catflap(open_time = 30)
                 self.reset_cumuli_et_al()
-
 
     def feed(self, target_img, img_name):
         target_event_obj = Event_Element(img_name=img_name, cc_target_img=target_img)
