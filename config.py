@@ -21,7 +21,7 @@ CAM_VFLIP = False          # vertical flip – adjust to taste
 # Maximum queue length
 MAX_QUEUE_LEN = 20
 
-# sleep interval between queued frames
+# sleep interval between queued frames (0.25s = max 4 FPS)
 SLEEP_INTERVAL = 0.25
 
 # Queue filling cycles
