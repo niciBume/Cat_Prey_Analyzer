@@ -19,24 +19,30 @@ import config
 # Conditionally import Picamera2 if available
 try:
     from picamera2 import Picamera2, Transform
-    LIBCAMERA_AVAILABLE = True
 except ImportError:
-    LIBCAMERA_AVAILABLE = False
+    raise RuntimeError(
+        "camera_type 'libcamera' selected but Picamera2 is not available. "
+        "Install picamera2 or supply --camera-url."
+    )
 
 class Camera:
     def __init__(self, q, camera_url):
-        self.q = q # if q is not None else deque(maxlen=config.MAX_QUEUE_LEN)
+        self.q = q
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
+        self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
         self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
         self.cap = None
         self.picam2 = None
-        self._initialize_camera()
+        # camera geometry and flips must exist _before_ initialization
         self.hflip = getattr(config, "CAM_HFLIP", False)
         self.vflip = getattr(config, "CAM_VFLIP", False)
         self.cam_x = getattr(config, "CAM_X", 640)
         self.cam_y = getattr(config, "CAM_Y", 480)
+
+        # now we can safely touch the hardware
+        self._initialize_camera()
 
     def _detect_camera_type(self):
         if not self.camera_url:
@@ -58,7 +64,7 @@ class Camera:
         raise ValueError("Unsupported CAMERA_URL format")
 
     def _initialize_camera(self):
-        if self.camera_type == "libcamera" and LIBCAMERA_AVAILABLE:
+        if self.camera_type == "libcamera":
             self.picam2 = Picamera2()
             video_cfg = self.picam2.create_video_configuration(
                 main={"size": (self.cam_x, self.cam_y), "format": "RGB888"},
@@ -117,7 +123,7 @@ class Camera:
                 now = time.time()
                 if now - last_enqueue_time >= self.sleep_interval:  # 0.5 sec = 2 FPS
                     timestamp = datetime.now(tz).strftime("%Y_%m_%d_%H-%M-%S.%f")
-                    if len(self.q) < self.q.maxlen:
+                    if len(self.q) < self.max_len:
                         self.q.append((timestamp, frame))
                         logging.debug("Enqueued frame at %s | Queue length: %d", timestamp, len(self.q))
                     else:
