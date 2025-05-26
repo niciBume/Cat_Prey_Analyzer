@@ -16,11 +16,18 @@ import gc
 import sys
 import config
 
+# Conditionally import Picamera2 if available
+try:
+    from picamera2 import Picamera2, Transform
+    LIBCAMERA_AVAILABLE = True
+except ImportError:
+    LIBCAMERA_AVAILABLE = False
+
 class Camera:
     def __init__(self, q, camera_url):
         self.q = q # if q is not None else deque(maxlen=config.MAX_QUEUE_LEN)
-        self.sleep_interval = config.SLEEP_INTERVAL
-        self.queue_cycles = config.FILL_QUEUE_CYCLES
+        self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
+        self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
         self.cap = None
@@ -34,12 +41,6 @@ class Camera:
     def _detect_camera_type(self):
         if not self.camera_url:
             logging.info("Using internal PiCamera2.")
-            try:
-                from picamera2 import Picamera2, Transform
-                global Picamera2, Transform, LIBCAMERA_AVAILABLE
-                LIBCAMERA_AVAILABLE = True
-            except ImportError:
-                LIBCAMERA_AVAILABLE = False
             return "libcamera"
         if isinstance(self.camera_url, int) or (isinstance(self.camera_url, str) and self.camera_url.isdigit()):
             self.camera_url = int(self.camera_url)
