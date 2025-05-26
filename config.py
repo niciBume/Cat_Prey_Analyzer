@@ -25,7 +25,7 @@ MAX_QUEUE_LEN = 20
 SLEEP_INTERVAL = 0.25
 
 # Queue filling cycles
-FILL_QUEUE_CYCLES = 30
+FILL_QUEUE_CYCLES = 60
 
 # Process queue if longer than this number of frames
 DEFAULT_FPS_OFFSET = 2
