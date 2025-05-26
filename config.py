@@ -14,8 +14,8 @@ BOT_TOKEN = '1234567890:SecretTelegramApiToken534HherhETQ' # bot Telegram ID:TOK
 #HA_REST_TOKEN = "ChangeThisToYourCreated-SecretHomeAssistantREST-Token"
 
 # Camera resolution and image flipping
-CAM_X = 1920
-CAM_Y = 1080
+CAM_WIDTH = 1920
+CAM_HEIGHT = 1080
 CAM_HFLIP = True           # horizontal flip
 CAM_VFLIP = False          # vertical flip – adjust to taste
 # Maximum queue length
