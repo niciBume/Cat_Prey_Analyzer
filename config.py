@@ -28,14 +28,10 @@ CAM_HEIGHT = 1080
 # Optional per-source overrides
 CAMERA_FLIP_OVERRIDES = {
     "http://192.168.1.22:9000/mjpg": {"hflip": True, "vflip": False},
-    "rtsp://192.168.1.100:554/stream": {"hflip": True, "vflip": False},
+    "rtsp://stream:P4Vdo@192.168.1.59:8554/unicast": {"hflip": False, "vflip": False},
     "usb:0": {"hflip": False, "vflip": True},  # Simulated USB cam identifier
-    "default": {"hflip": False, "vflip": False}
+    "default": {"hflip": True, "vflip": True}
 }
-
-# Default flips (used if no override is found)
-CAM_HFLIP = False
-CAM_VFLIP = False
 
 # Maximum queue length
 MAX_QUEUE_LEN = 20
