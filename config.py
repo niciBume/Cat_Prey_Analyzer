@@ -25,10 +25,6 @@ HA_REST_TOKEN = _require_env("HA_REST_TOKEN")
 CAM_WIDTH = 1920
 CAM_HEIGHT = 1080
 
-# Default flips (used if no override is found)
-CAM_HFLIP = False
-CAM_VFLIP = False
-
 # Optional per-source overrides
 CAMERA_FLIP_OVERRIDES = {
     "http://192.168.1.22:9000/mjpg": {"hflip": True, "vflip": False},
@@ -37,8 +33,9 @@ CAMERA_FLIP_OVERRIDES = {
     "default": {"hflip": False, "vflip": False}
 }
 
-CAM_HFLIP = True
-CAM_VFLIP = True
+# Default flips (used if no override is found)
+CAM_HFLIP = False
+CAM_VFLIP = False
 
 # Maximum queue length
 MAX_QUEUE_LEN = 20
