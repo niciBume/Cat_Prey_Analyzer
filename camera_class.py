@@ -25,16 +25,14 @@ class Camera:
         self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
         self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
-        self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
-        self._load_flip_overrides()
         self.cap = None
         self.picam2 = None
 
         # Camera geometry and flip config
-        self.hflip = getattr(config, "CAM_HFLIP", False)
-        self.vflip = getattr(config, "CAM_VFLIP", False)
         self.cam_x = getattr(config, "CAM_WIDTH", 640)
         self.cam_y = getattr(config, "CAM_HEIGHT", 480)
+        self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
+        self._load_flip_overrides()
 
         # Initialize hardware
         self._initialize_camera()
