@@ -18,7 +18,7 @@ HA_REST_TOKEN = os.getenv("HA_REST_TOKEN", "CHANGE_ME")
 CAM_WIDTH = 1920
 CAM_HEIGHT = 1080
 CAM_HFLIP = True
-CAM_HFLIP = True
+CAM_VFLIP = True
 
 # Maximum queue length
 MAX_QUEUE_LEN = 20
