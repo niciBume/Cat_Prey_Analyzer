@@ -25,9 +25,9 @@ class Camera:
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
         self.camera_url = camera_url
+        self.camera_type = self._detect_camera_type()
         self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
         self._load_flip_overrides()
-        self.camera_type = self._detect_camera_type()
         self.cap = None
         self.picam2 = None
 
