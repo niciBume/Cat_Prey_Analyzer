@@ -140,7 +140,7 @@ class Sequential_Cascade_Feeder():
         logging.debug('Log Dir: %s', self.log_dir)
         self.event_nr = 0
         self.base_cascade = Cascade()
-        self.fps_offset = config.DEFAULT_FPS_OFFSET
+        self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.MAX_PROCESSES = 7
         self.EVENT_FLAG = False
         self.event_objects = []
@@ -159,7 +159,8 @@ class Sequential_Cascade_Feeder():
         self.queues_cumuli_in_event = []
         self.bot = NodeBot()
         self.processing_pool = []
-        self.main_deque = deque(maxlen=config.MAX_QUEUE_LEN)
+        self.max_queue_len = getattr(config, "MAX_QUEUE_LEN", 20)
+        self.main_deque = deque(maxlen=self.max_queue_len)
         self.camera_url = CAMERA_URL
 
     def reset_cumuli_et_al(self):
