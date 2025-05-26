@@ -1,5 +1,4 @@
 from datetime import datetime
-from collections import deque
 import cv2
 import time
 import pytz
