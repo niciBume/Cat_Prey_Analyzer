@@ -20,26 +20,14 @@ CAM_HFLIP = True
 CAM_HFLIP = True
 
 # Maximum queue length
-MAX_QUEUE_LEN = 4
+MAX_QUEUE_LEN = 20
 
-# Sensitivity threshold for minimal motion required to enqueue a frame
-MOTION_THRESHOLD = 2.5  # or another reasonable default value
+# sleep interval between queued frames
+SLEEP_INTERVAL = 0.25
 
-# Motion detection thresholds for adaptive queue rate
-MOTION_THRESHOLDS = {
-    "low": 2,        # Below this, frame is skipped
-    "medium": 5,    # Above this, use medium enqueue rate
-    "high": 10       # Above this, use fast enqueue rate
-}
+# Queue filling cycles
+FILL_QUEUE_CYCLES = 30
 
-# Corresponding enqueue intervals (in seconds)
-ENQUEUE_INTERVALS = {
-    "slow": 1.5,
-    "medium": 1.0,
-    "fast": 0.5,
-    "max": 0.1
-}
-
-# Queue a frame at the start and in this interval
-FORCED_ENQUEUE_INTERVAL = 60
+# Process queue if longer than this number of frames
+DEFAULT_FPS_OFFSET = 2
 
