@@ -2,8 +2,8 @@
 import os
 
 # Insert Chat ID and Bot Token according to Telegram API
-CHAT_ID = os.getenv("CAT_PREY_CHAT_ID",   "CHANGE_ME")
-BOT_TOKEN = os.getenv("CAT_PREY_BOT_TOKEN", "CHANGE_ME")
+CHAT_ID = os.getenv("TELEGRAM_CHAT_ID",   "CHANGE_ME")
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "CHANGE_ME")
 
 # Insert webhooks for home assistant
 HA_UNLOCK_WEBHOOK = os.getenv("HA_UNLOCK_WEBHOOK", "CHANGE_ME")
