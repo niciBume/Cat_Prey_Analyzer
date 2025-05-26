@@ -44,7 +44,8 @@ logging.basicConfig(
     datefmt='%m/%d/%Y-%I:%M:%S%p'
 )
 logging.info('Starting CatPreyAnalyzer...')
-logging.info("Using following CAMERA_URL: %s", CAMERA_URL)
+if CAMERA_URL:
+    logging.info("Using following CAMERA_URL: %s", CAMERA_URL)
 
 import numpy as np
 from pathlib import Path
@@ -53,7 +54,7 @@ import pytz
 import time
 from datetime import datetime
 from collections import deque
-import threading
+from threading import Thread
 from multiprocessing import Process
 import telegram
 from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
@@ -69,6 +70,9 @@ sys.path.append('/home/pi/CatPreyAnalyzer')
 sys.path.append('/home/pi')
 from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
 from camera_class import Camera
+
+# Determine camera mode
+USE_PICAMERA = USE_RTSP = USE_MJPEG = False
 
 # Determine if using home assistant catflap control
 USE_HA = False
@@ -130,7 +134,7 @@ class Spec_Event_Handler():
 
             # Write img to output dir and log csv of each event
             cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
-            #self.log_to_csv(img_event_obj=single_cascade)
+            self.log_to_csv(img_event_obj=single_cascade)
 
 class Sequential_Cascade_Feeder():
     def __init__(self):
@@ -138,9 +142,7 @@ class Sequential_Cascade_Feeder():
         logging.debug('Log Dir: %s', self.log_dir)
         self.event_nr = 0
         self.base_cascade = Cascade()
-        self.DEFAULT_FPS_OFFSET = 2
-        self.QUEQUE_MAX_THRESHOLD = 30
-        self.fps_offset = self.DEFAULT_FPS_OFFSET
+        self.fps_offset = config.DEFAULT_FPS_OFFSET
         self.MAX_PROCESSES = 7
         self.EVENT_FLAG = False
         self.event_objects = []
@@ -159,7 +161,8 @@ class Sequential_Cascade_Feeder():
         self.queues_cumuli_in_event = []
         self.bot = NodeBot()
         self.processing_pool = []
-        self.main_deque = deque()
+        self.main_deque = deque(maxlen=config.MAX_QUEUE_LEN)
+        self.camera_url = CAMERA_URL
 
     def reset_cumuli_et_al(self):
         self.EVENT_FLAG = False
@@ -167,7 +170,6 @@ class Sequential_Cascade_Feeder():
         self.PATIENCE_FLAG = False
         self.FACE_FOUND_FLAG = False
         self.cumulus_points = 0
-        self.fps_offset = self.DEFAULT_FPS_OFFSET
         self.event_reset_counter = 0
         self.face_counter = 0
         self.PREY_FLAG = None
@@ -264,26 +266,56 @@ class Sequential_Cascade_Feeder():
 
         return imgNr
 
+    def queque_handler(self):
+        # Do this to force run all networks s.t. the network inference time stabilizes
+        self.single_debug()
+
+        # Pass self.main_deque to the camera
+        self.camera = Camera(self.main_deque, self.camera_url)
+
+        # Start the camera fill loop
+        camera_thread = Thread(target=self.camera.fill_queue, args=(self.main_deque,), daemon=True)
+        camera_thread.start()
+
+
+        while(True):
+            if len(self.main_deque) > self.fps_offset:
+                logging.debug("Deque type: %s | Length: %d", type(self.main_deque), len(self.main_deque))
+                self.queque_worker()
+            else:
+                logging.debug('Nothing to work with => Queue_length: %d', len(self.main_deque))
+                time.sleep(0.15)
+
+            #Check if user force opens the door
+            if self.bot.node_let_in_flag and USE_HA:
+                logging.info("Temporary unlocking the catflap on user's behalf.")
+                self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
+                self.open_catflap(open_time = 30)
+                self.reset_cumuli_et_al()
+
     def queque_worker(self):
         logging.debug("Working the Queque with len: %d", len(self.main_deque))
         start_time = time.time()
+
         #Feed the latest image in the Queue through the cascade
-        cascade_obj = self.feed(target_img=self.main_deque[self.fps_offset][1], img_name=self.main_deque[self.fps_offset][0])[1]
+        timestamp, frame = self.main_deque[self.fps_offset]
+        cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
         logging.debug('Runtime: %.2f seconds', time.time() - start_time)
         done_timestamp = datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f")
         logging.debug('Timestamp at Done Runtime: %s', done_timestamp)
 
-        overhead = datetime.strptime(done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(self.main_deque[self.fps_offset][0], "%Y_%m_%d_%H-%M-%S.%f")
+        overhead = datetime.strptime(done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(timestamp, "%Y_%m_%d_%H-%M-%S.%f")
         logging.debug('Overhead: %.2f seconds', overhead.total_seconds())
 
         #Add this such that the bot has some info
         self.bot.node_queue_info = len(self.main_deque)
-        self.bot.node_live_img = self.main_deque[self.fps_offset][1]
+        self.bot.node_live_img = frame
         self.bot.node_over_head_info = overhead.total_seconds()
 
         # Always delete the left part
-        for i in range(self.fps_offset + 1):
-            self.main_deque.popleft()
+        for _ in range(self.fps_offset + 1):
+            if self.main_deque:
+                self.main_deque.popleft()
 
         if cascade_obj.cc_cat_bool == True:
             #We are inside an event => add event_obj to list
@@ -420,35 +452,6 @@ class Sequential_Cascade_Feeder():
                 self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
         else:
             self.bot.send_text('Catflap does not need unlocking, already set to: [' + catflap_state + '].')
-
-    def queque_handler(self):
-        # Do this to force run all networks s.t. the network inference time stabilizes
-        self.single_debug()
-
-        camera = Camera(q=self.main_deque, camera_url=CAMERA_URL)
-        camera_thread = threading.Thread(target=camera._fill_queue_loop, daemon=True)
-        camera_thread.start()
-
-        while(True):
-            if len(self.main_deque) > self.QUEQUE_MAX_THRESHOLD:
-                self.main_deque.clear()
-                self.reset_cumuli_et_al()
-                # Clean up garbage
-                gc.collect()
-                print('DELETING QUEQUE BECAUSE OVERLOADED!')
-                self.bot.send_text(message='Running Hot... had to kill Queque!')
-            elif len(self.main_deque) > self.DEFAULT_FPS_OFFSET:
-                self.queque_worker()
-            else:
-                logging.debug('Nothing to work with => Queue_length: %d', len(self.main_deque))
-                time.sleep(0.15)
-
-            #Check if user force opens the door
-            if self.bot.node_let_in_flag and USE_HA:
-                logging.info("Temporary unlocking the catflap on user's behalf.")
-                self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
-                self.open_catflap(open_time = 30)
-                self.reset_cumuli_et_al()
 
     def feed(self, target_img, img_name):
         target_event_obj = Event_Element(img_name=img_name, cc_target_img=target_img)
@@ -774,14 +777,9 @@ class NodeBot():
     def bot_send_live_pic(self, bot, update):
         if self.node_live_img is not None:
             # Encode image to JPEG format
-            ret, jpeg = cv2.imencode('.jpg', self.node_live_img)
-            if ret:
-                # Convert to bytes
-                img_bytes = jpeg.tobytes()
-                caption = 'Last live picture:'
-                self.send_img(img_bytes, caption, is_encoded=True)
-            else:
-                self.send_text('Failed to encode image.')
+            cv2.imwrite('live_img.jpg', self.node_live_img)
+            caption = 'Last Live picture:'
+            self.send_img(self.node_live_img, caption)
         else:
             self.send_text('No img available yet...')
 
