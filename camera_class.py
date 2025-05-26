@@ -1,11 +1,3 @@
-# Let's expand the previously simplified Camera class to handle multiple camera types:
-# - libcamera (Picamera2)
-# - RTSP
-# - MJPEG
-# - USB
-# - Video files
-# We'll maintain 2 FPS enqueuing across all types.
-
 from datetime import datetime
 from collections import deque
 import cv2
@@ -19,11 +11,11 @@ import config
 # Conditionally import Picamera2 if available
 try:
     from picamera2 import Picamera2, Transform
+    PICAMERA_AVAILABLE = True
 except ImportError:
-    raise RuntimeError(
-        "camera_type 'libcamera' selected but Picamera2 is not available. "
-        "Install picamera2 or supply --camera-url."
-    )
+    PICAMERA_AVAILABLE = False
+    Picamera2 = Transform = None                        # type: ignore
+
 
 class Camera:
     def __init__(self, q, camera_url):
@@ -35,13 +27,14 @@ class Camera:
         self.camera_type = self._detect_camera_type()
         self.cap = None
         self.picam2 = None
-        # camera geometry and flips must exist _before_ initialization
+
+        # Camera geometry and flip config
         self.hflip = getattr(config, "CAM_HFLIP", False)
         self.vflip = getattr(config, "CAM_VFLIP", False)
-        self.cam_x = getattr(config, "CAM_X", 640)
-        self.cam_y = getattr(config, "CAM_Y", 480)
+        self.cam_x = getattr(config, "CAM_WIDTH", 640)
+        self.cam_y = getattr(config, "CAM_HEIGHT", 480)
 
-        # now we can safely touch the hardware
+        # Initialize hardware
         self._initialize_camera()
 
     def _detect_camera_type(self):
@@ -65,6 +58,8 @@ class Camera:
 
     def _initialize_camera(self):
         if self.camera_type == "libcamera":
+            if not PICAMERA_AVAILABLE:
+                raise RuntimeError("camera_type 'libcamera' selected but Picamera2 is not available.")
             self.picam2 = Picamera2()
             video_cfg = self.picam2.create_video_configuration(
                 main={"size": (self.cam_x, self.cam_y), "format": "RGB888"},
@@ -75,16 +70,23 @@ class Camera:
             self.picam2.start()
             time.sleep(2)
             logging.info("PiCamera2 initialized.")
-        else:
+        elif self.camera_type in {"usb", "rtsp", "mjpeg", "video"}:
             self.cap = cv2.VideoCapture(self.camera_url)
             if self.camera_type == "usb":
                 self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cam_x)
                 self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cam_y)
                 self.cap.set(cv2.CAP_PROP_FPS, 6)
+            if self.camera_type == "mjpeg":
+                self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            if self.camera_type == "rtsp":
+                logging.debug("RTSP stream may need time to buffer. Sleeping briefly...")
+                time.sleep(0.2)
             if not self.cap.isOpened():
                 raise RuntimeError(f"Failed to open stream: {self.camera_url}")
             else:
+                fps_reported = self.cap.get(cv2.CAP_PROP_FPS)
                 logging.debug(f"Video stream {self.camera_type} opened successfully with: {self.camera_url}.")
+                logging.debug(f"Camera FPS (reported): {fps_reported:.2f}")
 
     def _restart_camera(self):
         logging.warning("Restarting camera...")
@@ -95,7 +97,7 @@ class Camera:
         if self.cap:
             self.cap.release()
             self.cap = None
-        logging.debug("Camera restarted.")
+        logging.debug("Camera resources released.")
         gc.collect()
         self._initialize_camera()
 
@@ -104,7 +106,7 @@ class Camera:
         tz = pytz.timezone("Europe/Berlin")
         last_enqueue_time = time.time()
 
-        logging.info(f"Starting queuing loop with {self.sleep_interval}sec between frames ... ")
+        logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
         while True:
             try:
                 if self.camera_type == "libcamera" and self.picam2:
@@ -117,17 +119,15 @@ class Camera:
                         time.sleep(0.2)
                         self._restart_camera()
                         continue
-                    #else:
-                    #    logging.debug("Frame read OK: shape=%s", frame.shape)
 
                 now = time.time()
-                if now - last_enqueue_time >= self.sleep_interval:  # 0.5 sec = 2 FPS
+                if now - last_enqueue_time >= self.sleep_interval:
                     timestamp = datetime.now(tz).strftime("%Y_%m_%d_%H-%M-%S.%f")
                     if len(self.q) < self.max_len:
                         self.q.append((timestamp, frame))
-                        logging.debug("Enqueued frame at %s | Queue length: %d", timestamp, len(self.q))
+                        logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue length: {len(self.q)}")
                     else:
-                        logging.warning("Queue is full, dropping frame.")
+                        logging.warning("Queue is full (%d), dropping frame.", self.max_len)
                     last_enqueue_time = now
 
                     i += 1
@@ -142,6 +142,7 @@ class Camera:
                     )
                     sys.stdout.flush()
                     self._last_debug_log_time = time.time()
+
                 time.sleep(0.01)
 
             except Exception as e:
