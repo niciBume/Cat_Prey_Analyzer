@@ -1,22 +1,42 @@
 # config.py
 import os
 
+
+def _require_env(var: str) -> str:
+    val = os.getenv(var, "CHANGE_ME")
+    if val == "CHANGE_ME":
+        raise RuntimeError(f"Environment variable {var} must be set.")
+    return val
+
 # Insert Chat ID and Bot Token according to Telegram API
-CHAT_ID = os.getenv("TELEGRAM_CHAT_ID",   "CHANGE_ME")
-BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "CHANGE_ME")
+CHAT_ID  = _require_env("TELEGRAM_CHAT_ID")
+BOT_TOKEN = _require_env("TELEGRAM_BOT_TOKEN")
 
 # Insert webhooks for home assistant
-HA_UNLOCK_WEBHOOK = os.getenv("HA_UNLOCK_WEBHOOK", "CHANGE_ME")
-HA_LOCK_OUT_WEBHOOK = os.getenv("HA_LOCK_OUT_WEBHOOK", "CHANGE_ME")
-HA_LOCK_ALL_WEBHOOK = os.getenv("HA_LOCK_ALL_WEBHOOK", "CHANGE_ME")
+HA_UNLOCK_WEBHOOK = _require_env("HA_UNLOCK_WEBHOOK")
+HA_LOCK_OUT_WEBHOOK = _require_env("HA_LOCK_OUT_WEBHOOK")
+HA_LOCK_ALL_WEBHOOK = _require_env("HA_LOCK_ALL_WEBHOOK")
 
 # TOKEN for HA REST
-HA_REST_URL = os.getenv("HA_REST_URL", "CHANGE_ME")
-HA_REST_TOKEN = os.getenv("HA_REST_TOKEN", "CHANGE_ME")
+HA_REST_URL = _require_env("HA_REST_URL")
+HA_REST_TOKEN = _require_env("HA_REST_TOKEN")
 
 # Camera resolution and image flipping
 CAM_WIDTH = 1920
 CAM_HEIGHT = 1080
+
+# Default flips (used if no override is found)
+CAM_HFLIP = False
+CAM_VFLIP = False
+
+# Optional per-source overrides
+CAMERA_FLIP_OVERRIDES = {
+    "http://192.168.1.22:9000/mjpg": {"hflip": True, "vflip": False},
+    "rtsp://192.168.1.100:554/stream": {"hflip": True, "vflip": False},
+    "usb:0": {"hflip": False, "vflip": True},  # Simulated USB cam identifier
+    "default": {"hflip": False, "vflip": False}
+}
+
 CAM_HFLIP = True
 CAM_VFLIP = True
 

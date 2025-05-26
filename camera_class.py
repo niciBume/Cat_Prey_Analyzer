@@ -25,6 +25,8 @@ class Camera:
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
         self.camera_url = camera_url
+        self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
+        self._load_flip_overrides()
         self.camera_type = self._detect_camera_type()
         self.cap = None
         self.picam2 = None
@@ -37,6 +39,18 @@ class Camera:
 
         # Initialize hardware
         self._initialize_camera()
+
+    def _load_flip_overrides(self):
+        key = str(self.camera_url)
+        override = self.flip_overrides.get(key)
+
+        if not override and self.camera_type == "usb":
+            override = self.flip_overrides.get(f"usb:{self.camera_url}")
+
+        override = override or self.flip_overrides.get("default", {})
+        self.hflip = override.get("hflip", getattr(config, "CAM_HFLIP", False))
+        self.vflip = override.get("vflip", getattr(config, "CAM_VFLIP", False))
+        logging.info(f"Camera flip config: hflip={self.hflip}, vflip={self.vflip}")
 
     def _detect_camera_type(self):
         if not self.camera_url:
@@ -120,6 +134,14 @@ class Camera:
                         time.sleep(0.2)
                         self._restart_camera()
                         continue
+
+                    # Apply flip if configured
+                    if self.hflip and self.vflip:
+                        frame = cv2.flip(frame, -1)
+                    elif self.hflip:
+                        frame = cv2.flip(frame, 1)
+                    elif self.vflip:
+                        frame = cv2.flip(frame, 0)
 
                 now = time.time()
                 if now - last_enqueue_time >= self.sleep_interval:
