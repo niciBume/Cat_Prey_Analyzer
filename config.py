@@ -16,9 +16,8 @@ BOT_TOKEN = '1234567890:SecretTelegramApiToken534HherhETQ' # bot Telegram ID:TOK
 # Camera resolution and image flipping
 CAM_X = 1920
 CAM_Y = 1080
-CAM_HFLIP = True
-CAM_HFLIP = True
-
+CAM_HFLIP = True           # horizontal flip
+CAM_VFLIP = False          # vertical flip – adjust to taste
 # Maximum queue length
 MAX_QUEUE_LEN = 20
 
