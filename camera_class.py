@@ -26,6 +26,10 @@ class Camera:
         self.cap = None
         self.picam2 = None
         self._initialize_camera()
+        self.hflip = getattr(config, "CAM_HFLIP", False)
+        self.vflip = getattr(config, "CAM_VFLIP", False)
+        self.cam_x = getattr(config, "CAM_X", 640)
+        self.cam_y = getattr(config, "CAM_Y", 480)
 
     def _detect_camera_type(self):
         if not self.camera_url:
@@ -56,9 +60,9 @@ class Camera:
         if self.camera_type == "libcamera" and LIBCAMERA_AVAILABLE:
             self.picam2 = Picamera2()
             video_cfg = self.picam2.create_video_configuration(
-                main={"size": (config.CAM_X, config.CAM_Y), "format": "RGB888"},
+                main={"size": (self.cam_x, self.cam_y), "format": "RGB888"},
                 controls={"FrameRate": 6},
-                transform=Transform(hflip=config.CAM_HFLIP, vflip=config.CAM_VFLIP)
+                transform=Transform(hflip=self.hflip, vflip=self.vflip)
             )
             self.picam2.configure(video_cfg)
             self.picam2.start()
@@ -67,8 +71,8 @@ class Camera:
         else:
             self.cap = cv2.VideoCapture(self.camera_url)
             if self.camera_type == "usb":
-                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, config.CAM_X)
-                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, config.CAM_Y)
+                self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cam_x)
+                self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cam_y)
                 self.cap.set(cv2.CAP_PROP_FPS, 6)
             if not self.cap.isOpened():
                 raise RuntimeError(f"Failed to open stream: {self.camera_url}")
@@ -88,7 +92,7 @@ class Camera:
         gc.collect()
         self._initialize_camera()
 
-    def fill_queue(self, q: deque):
+    def fill_queue(self):
         i = 0
         tz = pytz.timezone("Europe/Berlin")
         last_enqueue_time = time.time()
