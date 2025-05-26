@@ -49,9 +49,8 @@ if CAMERA_URL:
 
 import numpy as np
 from pathlib import Path
-import os, cv2, time, csv, sys, gc
+import os, cv2, time, csv, sys
 import pytz
-import time
 from datetime import datetime
 from collections import deque
 from threading import Thread
@@ -62,7 +61,6 @@ import xml.etree.ElementTree as ET
 import urllib.request
 import config
 import contextlib
-import importlib
 import requests
 from io import BytesIO
 
@@ -274,7 +272,7 @@ class Sequential_Cascade_Feeder():
         self.camera = Camera(self.main_deque, self.camera_url)
 
         # Start the camera fill loop
-        camera_thread = Thread(target=self.camera.fill_queue, args=(self.main_deque,), daemon=True)
+        camera_thread = Thread(target=self.camera.fill_queue, daemon=True)
         camera_thread.start()
 
 
