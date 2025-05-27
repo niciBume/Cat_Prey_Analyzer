@@ -10,7 +10,7 @@ import config
 # Conditionally import Picamera2 if available
 try:
     from picamera2 import Picamera2
-    from libcamera import controls, Transform
+    from libcamera import Transform
     PICAMERA_AVAILABLE = True
 except ImportError:
     PICAMERA_AVAILABLE = False
