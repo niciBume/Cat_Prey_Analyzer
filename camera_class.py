@@ -20,6 +20,7 @@ except ImportError:
 class Camera:
     def __init__(self, q, camera_url):
         self.q = q
+        self._last_debug_log_time = 0
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
@@ -72,6 +73,8 @@ class Camera:
         if self.camera_type == "libcamera":
             if not PICAMERA_AVAILABLE:
                 raise RuntimeError("camera_type 'libcamera' selected but Picamera2 is not available.")
+            if Picamera2 is None or Transform is None:
+                raise RuntimeError("Picamera2 modules are not properly loaded.")
             self.picam2 = Picamera2()
             video_cfg = self.picam2.create_video_configuration(
                 main={"size": (self.cam_x, self.cam_y), "format": "RGB888"},
