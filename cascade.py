@@ -266,7 +266,7 @@ class Sequential_Cascade_Feeder():
 
         return imgNr
 
-    def queque_handler(self):
+    def queue_handler(self):
         # Do this to force run all networks s.t. the network inference time stabilizes
         self.single_debug()
 
@@ -403,9 +403,9 @@ class Sequential_Cascade_Feeder():
         # Pause the camera queue before opening
         if hasattr(self, "camera"):
             with self.camera._pause_lock:
+                logging.debug(f"Pausing camera queue for {self.camera.pause_duration} seconds (in open_catflap)")
                 self.camera.pause_duration = float(open_time - 2)
             self.camera.pause_event.set()
-            logging.debug(f"Pausing camera queue for {self.camera.pause_duration} seconds (in open_catflap)")
 
         # check current catflap state
         headers = {
@@ -433,7 +433,6 @@ class Sequential_Cascade_Feeder():
                 pass
             self.bot.send_text('Catflap is [' + catflap_state + '], unlocking for ' + str(open_time) + ' seconds.')
             time.sleep(open_time)
-            logging.debug(f"Resume queuing (in open_catflap)")
 
             if catflap_state == "locked_out":
                 lock_url = config.HA_LOCK_OUT_WEBHOOK
@@ -820,4 +819,4 @@ class DummyDQueque():
 
 if __name__ == '__main__':
     sq_cascade = Sequential_Cascade_Feeder()
-    sq_cascade.queque_handler()
+    sq_cascade.queue_handler()
