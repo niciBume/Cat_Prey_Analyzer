@@ -6,6 +6,7 @@ import logging
 import gc
 import sys
 import config
+from threading import Event, Lock
 
 # Conditionally import Picamera2 if available
 try:
@@ -20,6 +21,9 @@ except ImportError:
 class Camera:
     def __init__(self, q, camera_url):
         self.q = q
+        self.pause_event = Event()
+        self.pause_duration = 0.0
+        self._pause_lock = Lock()
         self._last_debug_log_time = 0
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
@@ -120,10 +124,23 @@ class Camera:
         i = 0
         tz = pytz.timezone("Europe/Berlin")
         last_enqueue_time = time.time()
-
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
+
         while True:
             try:
+                # Pause and clear queue if pause_event is set
+                if self.pause_event.is_set():
+                    with self._pause_lock:
+                        if len(self.q):
+                            logging.info("Pausing queue and clearing all frames...")
+                            self.q.clear()
+                        logging.info(f"Queueing paused for {self.pause_duration} seconds.")
+                        pause_duration = self.pause_duration
+                        self.pause_duration = 0.0
+                    time.sleep(pause_duration)
+                    self.pause_event.clear()
+                    continue
+
                 if self.camera_type == "libcamera" and self.picam2:
                     rgb = self.picam2.capture_array("main")
                     frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
@@ -172,5 +189,4 @@ class Camera:
                 logging.error("Exception in fill_queue: %s", e)
                 self._restart_camera()
                 time.sleep(1)
-
 

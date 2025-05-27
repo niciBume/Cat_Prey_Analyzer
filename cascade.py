@@ -54,7 +54,8 @@ import pytz
 from datetime import datetime
 from collections import deque
 from threading import Thread
-from multiprocessing import Process
+from multiprocessing import Process, Value
+from ctypes import c_float
 import telegram
 from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
 import xml.etree.ElementTree as ET
@@ -397,23 +398,30 @@ class Sequential_Cascade_Feeder():
         return cascade_obj
 
     def open_catflap(self, open_time):
+        logging.info(f"Opening catflap for {open_time} seconds...")
+
+        # Pause the camera queue before opening
+        if hasattr(self, "camera"):
+            with self.camera._pause_lock:
+                self.camera.pause_duration = float(open_time - 2)
+            self.camera.pause_event.set()
+            logging.debug(f"Pausing camera queue for {self.camera.pause_duration} seconds (in open_catflap)")
+
         # check current catflap state
         headers = {
             "Authorization": f"Bearer {config.HA_REST_TOKEN}",
             "content-type": "application/json"
         }
-        #response = get(config.HA_REST_URL, headers=headers)
-        #data = response.json()
         try:
             response = requests.get(config.HA_REST_URL, headers=headers, timeout=5)
             response.raise_for_status()
             data = response.json()
         except (requests.RequestException, ValueError) as exc:
-            logging.error("Could not query catflap state: %s", exc)
-            self.bot.send_text("⚠️  Could not query catflap state – aborting unlock.")
+            logging.error("Could not query HA catflap state: %s", exc)
+            self.bot.send_text("⚠️  Could not query HA catflap state – aborting unlock.")
             return
         catflap_state = data["state"]
-        logging.info(' #### catflap_state = %s', catflap_state)
+        logging.info('HA catflap_state = %s', catflap_state)
 
         # unlock catflap
         if catflap_state == "locked_out" or catflap_state == "locked_all":
@@ -421,34 +429,23 @@ class Sequential_Cascade_Feeder():
                 url = config.HA_UNLOCK_WEBHOOK,
                 method = "POST"
             )
-            #with urllib.request.urlopen(req) as response:
-            #    contents = response.read()
-            # Fire-and-forget: no need to keep the body in memory
             with contextlib.closing(urllib.request.urlopen(req)):
                 pass
             self.bot.send_text('Catflap is [' + catflap_state + '], unlocking for ' + str(open_time) + ' seconds.')
             time.sleep(open_time)
+            logging.debug(f"Resume queuing (in open_catflap)")
 
             if catflap_state == "locked_out":
-                req = urllib.request.Request(
-                    url = config.HA_LOCK_OUT_WEBHOOK,
-                    method = "POST"
-                )
-                #with urllib.request.urlopen(req) as response:
-                #    contents = response.read()
-                with contextlib.closing(urllib.request.urlopen(req)):
-                    pass
-                self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
-            if catflap_state == "locked_all":
-                req = urllib.request.Request(
-                    url = config.HA_LOCK_ALL_WEBHOOK,
-                    method = "POST"
-                )
-                #with urllib.request.urlopen(req) as response:
-                #    contents = response.read()
-                with contextlib.closing(urllib.request.urlopen(req)):
-                    pass
-                self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
+                lock_url = config.HA_LOCK_OUT_WEBHOOK
+            else:
+                lock_url = config.HA_LOCK_ALL_WEBHOOK
+            req = urllib.request.Request(
+                url = lock_url,
+                method = "POST"
+            )
+            with contextlib.closing(urllib.request.urlopen(req)):
+                pass
+            self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
         else:
             self.bot.send_text('Catflap does not need unlocking, already set to: [' + catflap_state + '].')
 
