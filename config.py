@@ -1,6 +1,10 @@
 # config.py
 import os
 
+"""
+Create a [hidden] .src file and 'source' it before firing cascade.py,
+containing your telegram and homeassistant tokens and hooks.
+"""
 
 def _require_env(var: str) -> str:
     val = os.getenv(var, "CHANGE_ME")
@@ -27,8 +31,9 @@ CAM_HEIGHT = 1080
 
 # Optional per-source overrides
 CAMERA_FLIP_OVERRIDES = {
-    "http://192.168.1.22:9000/mjpg": {"hflip": True, "vflip": False},
-    "rtsp://stream:P4Vdo@192.168.1.59:8554/unicast": {"hflip": False, "vflip": False},
+    "http://192.168.178.22:9000/mjpg": {"hflip": True, "vflip": False},
+    "rtsp://stream:P4Vdo@192.168.178.59:8554/unicast": {"hflip": False, "vflip": False},
+    "rtsp://stream:P4Vdo@192.168.178.58:8554/unicast": {"hflip": False, "vflip": False},
     "usb:0": {"hflip": False, "vflip": True},  # Simulated USB cam identifier
     "default": {"hflip": True, "vflip": True}
 }

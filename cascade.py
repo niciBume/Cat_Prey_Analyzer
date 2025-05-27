@@ -7,10 +7,12 @@ description="""\
 Cat Prey Analyzer - Smart Cat Flap Monitor
 
 This tool uses camera input and machine learning to detect
-whether a cat is bringing prey and manage flap control.
+whether a cat is bringing prey and manage homeassistant catflap control.
+It communicates with the user and can be controlled through telegram app.
 
---with-XXX - Select camera source mode (default=none: use Picamera2)
---log - select log level (default=INFO)
+Create a [hidden] .src file and 'source' it before firing cascade.py,
+containing your secrets [edit config.py].
+You can also tweak the rest of the values there for better performance.
 """,
     formatter_class=argparse.RawTextHelpFormatter
 )
@@ -224,7 +226,7 @@ class Sequential_Cascade_Feeder():
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
         sender_img = event_objects[max_prey_index].output_img
-        caption = 'Cumuli: ' + str(cumuli) + ' => PREY IN DA HOUSE!' + ' 🐁🐁🐁' + event_str
+        caption = 'Cumuli: ' + str(cumuli) + ' => PREY IN DA HOUSE!' + ' ⚠️  🐁' + event_str
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -240,7 +242,7 @@ class Sequential_Cascade_Feeder():
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
         sender_img = event_objects[min_prey_index].output_img
-        caption = 'Cumuli: ' + str(cumuli) + ' => No prey, cat is clean...' + ' 🐱' + event_str
+        caption = 'Cumuli: ' + str(cumuli) + ' => No prey, cat is clean...' + ' ✅️ 🐱' + event_str
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -384,9 +386,7 @@ class Sequential_Cascade_Feeder():
 
         if self.EVENT_FLAG and self.FACE_FOUND_FLAG:
             self.patience_counter += 1
-        if self.patience_counter > 2:
-            self.PATIENCE_FLAG = True
-        if self.face_counter > 1:
+        if self.patience_counter > 2 or self.face_counter > 1:
             self.PATIENCE_FLAG = True
 
     def single_debug(self):
@@ -397,56 +397,84 @@ class Sequential_Cascade_Feeder():
         logging.debug('Runtime: %.2f seconds', time.time() - start_time)
         return cascade_obj
 
+    def try_get_with_retries(url, headers, description="", retries=2, timeout=2):
+        for attempt in range(1, retries + 1):
+            try:
+                response = requests.get(url, headers=headers, timeout=timeout)
+                response.raise_for_status()
+                logging.debug(f"{description} (attempt {attempt}) succeeded.")
+                return response
+            except (requests.RequestException, ValueError) as e:
+                logging.warning(f"{description} (attempt {attempt}) failed: {e}")
+                time.sleep(1)
+        logging.error(f"{description} failed after {retries} attempts.")
+        return None
+
+    def try_post_with_retries(url, description, retries=2, timeout=2):
+        for attempt in range(retries + 1):
+            try:
+                req = urllib.request.Request(url=url, method="POST")
+                with urllib.request.urlopen(req, timeout=timeout) as response:
+                    return True
+            except urllib.error.URLError as e:
+                logging.warning(f"{description} attempt {attempt + 1} failed: {e}")
+                if attempt < retries:
+                    time.sleep(1)
+                else:
+                    logging.error(f"⚠️  All {retries + 1} attempts to {description} failed.")
+                    return False
+
     def open_catflap(self, open_time):
         logging.info(f"Opening catflap for {open_time} seconds...")
 
         # Pause the camera queue before opening
         if hasattr(self, "camera"):
             with self.camera._pause_lock:
-                logging.debug(f"Pausing camera queue for {self.camera.pause_duration} seconds (in open_catflap)")
                 self.camera.pause_duration = float(open_time - 2)
+                logging.debug(f"Pausing camera queue for {self.camera.pause_duration} seconds (in open_catflap)")
             self.camera.pause_event.set()
 
-        # check current catflap state
+        # Query HA catflap state with retry
         headers = {
             "Authorization": f"Bearer {config.HA_REST_TOKEN}",
             "content-type": "application/json"
         }
-        try:
-            response = requests.get(config.HA_REST_URL, headers=headers, timeout=5)
-            response.raise_for_status()
-            data = response.json()
-        except (requests.RequestException, ValueError) as exc:
-            logging.error("Could not query HA catflap state: %s", exc)
+        response = try_get_with_retries(config.HA_REST_URL, headers, description="Query HA catflap state")
+        if not response:
             self.bot.send_text("⚠️  Could not query HA catflap state – aborting unlock.")
             return
-        catflap_state = data["state"]
+
+        try:
+            data = response.json()
+            catflap_state = data["state"]
+        except ValueError as e:
+            logging.error(f"Failed to decode HA response JSON: {e}")
+            self.bot.send_text("⚠️  Invalid HA catflap state response – aborting unlock.")
+            return
+
         logging.info('HA catflap_state = %s', catflap_state)
 
-        # unlock catflap
-        if catflap_state == "locked_out" or catflap_state == "locked_all":
-            req = urllib.request.Request(
-                url = config.HA_UNLOCK_WEBHOOK,
-                method = "POST"
-            )
-            with contextlib.closing(urllib.request.urlopen(req)):
-                pass
-            self.bot.send_text('Catflap is [' + catflap_state + '], unlocking for ' + str(open_time) + ' seconds.')
-            time.sleep(open_time)
+        # Unlock catflap
+        if catflap_state in {"locked_out", "locked_all"}:
+            if try_post_with_retries(config.HA_UNLOCK_WEBHOOK, "Unlock catflap"):
+                self.bot.send_text(f'Catflap is [{catflap_state}], unlocking for {open_time} seconds.')
+                time.sleep(open_time)
 
-            if catflap_state == "locked_out":
-                lock_url = config.HA_LOCK_OUT_WEBHOOK
+                # Re-lock to previous state
+                lock_url_map = {
+                    "locked_out": config.HA_LOCK_OUT_WEBHOOK,
+                    "locked_all": config.HA_LOCK_ALL_WEBHOOK
+                }
+                lock_url = lock_url_map[catflap_state]
+
+                if try_post_with_retries(lock_url, f"Re-lock catflap to [{catflap_state}]"):
+                    self.bot.send_text(f'Catflap is back to previous state: [{catflap_state}].')
+                else:
+                    self.bot.send_text(f"❌️ Error: Failed to re-lock catflap to previous state [{catflap_state}].")
             else:
-                lock_url = config.HA_LOCK_ALL_WEBHOOK
-            req = urllib.request.Request(
-                url = lock_url,
-                method = "POST"
-            )
-            with contextlib.closing(urllib.request.urlopen(req)):
-                pass
-            self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
+                self.bot.send_text("⚠️  Warning: Failed to unlock catflap.")
         else:
-            self.bot.send_text('Catflap does not need unlocking, already set to: [' + catflap_state + '].')
+            self.bot.send_text(f'Catflap does not need unlocking, already set to: [{catflap_state}].')
 
     def feed(self, target_img, img_name):
         target_event_obj = Event_Element(img_name=img_name, cc_target_img=target_img)
