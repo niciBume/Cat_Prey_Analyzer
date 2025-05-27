@@ -35,12 +35,21 @@ CAMERA_FLIP_OVERRIDES = {
 
 # Maximum queue length
 MAX_QUEUE_LEN = 20
+if MAX_QUEUE_LEN <= 0:
+    raise ValueError("MAX_QUEUE_LEN must be positive")
 
 # sleep interval between queued frames
 SLEEP_INTERVAL = 0.25
+if SLEEP_INTERVAL < 0:
+    raise ValueError("SLEEP_INTERVAL must be non-negative")
 
 # Queue filling cycles
 FILL_QUEUE_CYCLES = 60
+if FILL_QUEUE_CYCLES <= 0:
+    raise ValueError("FILL_QUEUE_CYCLES must be positive")
 
 # Process queue if longer than this number of frames
 DEFAULT_FPS_OFFSET = 2
+if DEFAULT_FPS_OFFSET < 0:
+    raise ValueError("DEFAULT_FPS_OFFSET must be non-negative")
+
