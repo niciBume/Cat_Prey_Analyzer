@@ -11,7 +11,7 @@ from collections import deque
 from threading import Thread
 from multiprocessing import Process
 import telegram
-from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
+from telegram.ext import Updater, CommandHandler
 import xml.etree.ElementTree as ET
 import urllib.request
 import config
@@ -318,7 +318,7 @@ class Sequential_Cascade_Feeder():
                 self.reset_cumuli_et_al()
 
     def queue_worker(self):
-        logging.debug("Working the Queque with len: %d", len(self.main_deque))
+        logging.debug("Working the Queue with len: %d", len(self.main_deque))
         start_time = time.time()
 
         #Feed the latest image in the Queue through the cascade
@@ -394,7 +394,7 @@ class Sequential_Cascade_Feeder():
             logging.debug('NO CAT FOUND!')
             self.event_reset_counter += 1
             if self.event_reset_counter >= self.event_reset_threshold:
-                # If was True => event now over => clear queque
+                # If was True => event now over => clear queue
                 if self.EVENT_FLAG:
                     logging.debug('CLEARED QUEQUE BECAUSE EVENT OVER WITHOUT CONCLUSION...')
                     #TODO QUICK FIX
@@ -435,7 +435,7 @@ class Sequential_Cascade_Feeder():
     def try_post_with_retries(self, url, description, retries=2, timeout=2):
         retries = int(retries)
         timeout = float(timeout)
-        for attempt in range(1, retries + 2):  # +1 to include final attempt
+        for attempt in range(1, retries + 1):  # +1 to include final attempt
             try:
                 response = requests.post(url, timeout=timeout)
                 status = response.status_code
@@ -447,10 +447,10 @@ class Sequential_Cascade_Feeder():
             except requests.RequestException as e:
                 logging.warning(f"{description} (attempt {attempt}) failed: {e}")
 
-            if attempt < retries + 1:
+            if attempt < retries:
                 time.sleep(1)
 
-        logging.error(f"{description} failed after {retries + 1} attempts.")
+        logging.error(f"{description} failed after {retries} attempts.")
         return False
 
 
@@ -876,11 +876,11 @@ class NodeBot():
     def send_text(self, message):
         telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
 
-class DummyDQueque():
+class DummyDQueue():
     def __init__(self):
         self.target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
 
-    def dummy_queque_filler(self, main_deque):
+    def dummy_queue_filler(self, main_deque):
         while(True):
             img_name = datetime.now(pytz.timezone('Europe/Berlin')).strftime("%Y_%m_%d_%H-%M-%S.%f")
             main_deque.append((img_name, self.target_img))
