@@ -1,10 +1,6 @@
 # config.py
 import os
 
-"""
-Create a [hidden] .src file and 'source' it before firing cascade.py,
-containing your telegram and homeassistant tokens and hooks.
-"""
 
 def _require_env(var: str) -> str:
     val = os.getenv(var, "CHANGE_ME")
@@ -57,4 +53,3 @@ if FILL_QUEUE_CYCLES <= 0:
 DEFAULT_FPS_OFFSET = 2
 if DEFAULT_FPS_OFFSET < 0:
     raise ValueError("DEFAULT_FPS_OFFSET must be non-negative")
-
