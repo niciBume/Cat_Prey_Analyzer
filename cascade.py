@@ -4,7 +4,7 @@ import gzip
 import shutil
 import numpy as np
 from pathlib import Path
-import os, cv2, time, csv, sys
+import os, cv2, time, csv
 import pytz
 from datetime import datetime
 from collections import deque
@@ -15,10 +15,8 @@ from telegram.ext import Updater, CommandHandler
 import xml.etree.ElementTree as ET
 import urllib.request
 import config
-import contextlib
 import requests
 from io import BytesIO
-import urllib.error
 import argparse
 
 # Set up argument parser
@@ -434,7 +432,7 @@ class Sequential_Cascade_Feeder():
         logging.error(f"{description} failed after {retries} attempts.")
         return None
 
-    def try_post_with_retries(url, description, retries=2, timeout=2):
+    def try_post_with_retries(self, url, description, retries=2, timeout=2):
         retries = int(retries)
         timeout = float(timeout)
         for attempt in range(1, retries + 2):  # +1 to include final attempt
@@ -457,8 +455,6 @@ class Sequential_Cascade_Feeder():
 
 
     def open_catflap(self, open_time):
-        logging.info(f"Opening catflap for {open_time} seconds...")
-
         # Pause the camera queue before opening
         if hasattr(self, "camera"):
             with self.camera._pause_lock:
@@ -473,6 +469,7 @@ class Sequential_Cascade_Feeder():
         }
         response = self.try_get_with_retries(config.HA_REST_URL, headers, description="Query HA catflap state")
         if not response:
+            logging.error("Could not query HA catflap state – aborting unlock.")
             self.bot.send_text("⚠️  Could not query HA catflap state – aborting unlock.")
             return
 
@@ -481,12 +478,14 @@ class Sequential_Cascade_Feeder():
             catflap_state = data["state"]
         except ValueError as e:
             logging.error(f"Failed to decode HA response JSON: {e}")
-            self.bot.send_text("⚠️  Invalid HA catflap state response – aborting unlock.")
+            self.bot.send_text(f"Failed to decode HA response JSON: {e}")
             return
 
         logging.info('HA catflap_state = %s', catflap_state)
 
         # Unlock catflap
+        logging.info(f"Opening catflap for {open_time} seconds...")
+
         if catflap_state in {"locked_out", "locked_all"}:
             if self.try_post_with_retries(config.HA_UNLOCK_WEBHOOK, "Unlock catflap"):
                 self.bot.send_text(f'Catflap is [{catflap_state}], unlocking for {open_time} seconds.')
@@ -501,11 +500,15 @@ class Sequential_Cascade_Feeder():
 
                 if self.try_post_with_retries(lock_url, f"Re-lock catflap to [{catflap_state}]"):
                     self.bot.send_text(f'Catflap is back to previous state: [{catflap_state}].')
+                    logging.info(f'Catflap is back to previous state: [{catflap_state}].')
                 else:
+                    logging.error(f"Failed to re-lock catflap to previous state [{catflap_state}].")
                     self.bot.send_text(f"❌️ Error: Failed to re-lock catflap to previous state [{catflap_state}].")
             else:
+                logging.warning("Failed to unlock catflap.")
                 self.bot.send_text("⚠️  Warning: Failed to unlock catflap.")
         else:
+            logging.info(f'Catflap does not need unlocking, already set to: [{catflap_state}].')
             self.bot.send_text(f'Catflap does not need unlocking, already set to: [{catflap_state}].')
 
     def feed(self, target_img, img_name):
@@ -771,8 +774,12 @@ class NodeBot():
     def __init__(self):
         self.last_msg_id = 0
         self.bot_updater = Updater(token=config.BOT_TOKEN)
-        self.bot_dispatcher = self.bot_updater.dispatcher
+        self.bot_dispatcher = self.bot_updater.dispatchers
         self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
+        """
+        Removed reboot for now, clicked on it too many times by mistake :P
+        You can re-add it if you are running this on a dedicated Pi
+        """
 
         self.node_live_img = None
         self.node_queue_info = None
@@ -817,8 +824,9 @@ class NodeBot():
             time.sleep(1)
             bot_message = 'Rebooting in ' + str(15-i) + ' seconds...'
             self.send_text(bot_message)
-        self.send_text('See ya later Alligator')
-        #os.system("sudo reboot")
+        logger.info("Telegram bot requested a reboot. Won't do that, just logging it in syslog.")
+        self.send_text('REBOOTING.. See ya later Alligator!')
+        #os.system("sudo reboot") # won't do, some may call this as a service or standalone, not on a dedicated Pi..
         os.system("logger Cat_Prey_Analyzer called a reboot")
 
     def bot_send_last_casc_pic(self, bot, update):
@@ -826,6 +834,7 @@ class NodeBot():
             cv2.imwrite('last_casc.jpg', self.node_last_casc_img)
             caption = 'Last Cascade picture:'
             self.send_img(self.node_last_casc_img, caption)
+            logging.info("Sending last cascade image to bot")
         else:
             self.send_text('No casc img available yet...')
 
@@ -835,6 +844,7 @@ class NodeBot():
             cv2.imwrite('live_img.jpg', self.node_live_img)
             caption = 'Last Live picture:'
             self.send_img(self.node_live_img, caption)
+            logging.info("Sending live image to bot")
         else:
             self.send_text('No img available yet...')
 
