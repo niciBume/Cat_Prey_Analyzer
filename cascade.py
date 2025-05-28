@@ -1,4 +1,26 @@
 import logging
+from logging.handlers import RotatingFileHandler
+import gzip
+import shutil
+import numpy as np
+from pathlib import Path
+import os, cv2, time, csv, sys
+import pytz
+from datetime import datetime
+from collections import deque
+from threading import Thread
+from multiprocessing import Process, Value
+from ctypes import c_float
+import telegram
+from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
+import xml.etree.ElementTree as ET
+import urllib.request
+import config
+import contextlib
+import requests
+from io import BytesIO
+import urllib.error
+import logging
 import argparse
 
 # Set up argument parser
@@ -13,6 +35,7 @@ It communicates with the user and can be controlled through telegram app.
 Create a [hidden] .src file and 'source' it before firing cascade.py,
 containing your secrets [edit config.py].
 You can also tweak the rest of the values there for better performance.
+
 """,
     formatter_class=argparse.RawTextHelpFormatter
 )
@@ -35,45 +58,49 @@ args = parser.parse_args()
 if args.camera_url:
     CAMERA_URL = args.camera_url
 
-loglevel = args.log.upper()  # Ensures the log level is uppercase
+LOG_FILENAME = 'log/CatPreyAnalyzer.log'
+MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
+BACKUP_COUNT = 3
 
-logging.basicConfig(
-    level=getattr(logging, loglevel, logging.INFO),  # Fallback to INFO if invalid
-    format="%(asctime)s [%(levelname)s]: %(message)s",
-    #format="%(asctime)s - %(message)s",
-    filename='CatPreyAnalyzer.log',
-    filemode='w+',
-    datefmt='%m/%d/%Y-%I:%M:%S%p'
+# Create a RotatingFileHandler
+log_handler = logging.handlers.RotatingFileHandler(
+    LOG_FILENAME, maxBytes=MAX_LOG_SIZE, backupCount=BACKUP_COUNT
 )
+
+# Optional: compress old log files after rotation
+class GzipRotator:
+    def __call__(self, source, dest):
+        with open(source, 'rb') as f_in:
+            with gzip.open(dest + '.gz', 'wb') as f_out:
+                shutil.copyfileobj(f_in, f_out)
+        os.remove(source)
+
+log_handler.rotator = GzipRotator()
+log_handler.namer = lambda name: name + ".gz"
+
+# Set format and log level
+formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(message)s',
+                              datefmt='%m/%d/%Y-%I:%M:%S%p')
+log_handler.setFormatter(formatter)
+
+# Apply to root logger
+logger = logging.getLogger()
+logger.setLevel(logging.INFO)
+logger.addHandler(log_handler)
+
+# Optional: also print to console
+#console = logging.StreamHandler()
+#console.setFormatter(formatter)
+#logger.addHandler(console)
+
+
 logging.info('Starting CatPreyAnalyzer...')
+
 if CAMERA_URL:
     logging.info("Using following CAMERA_URL: %s", CAMERA_URL)
 
-import numpy as np
-from pathlib import Path
-import os, cv2, time, csv, sys
-import pytz
-from datetime import datetime
-from collections import deque
-from threading import Thread
-from multiprocessing import Process, Value
-from ctypes import c_float
-import telegram
-from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
-import xml.etree.ElementTree as ET
-import urllib.request
-import config
-import contextlib
-import requests
-from io import BytesIO
-
-sys.path.append('/home/pi/CatPreyAnalyzer')
-sys.path.append('/home/pi')
-from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
+from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
 from camera_class import Camera
-
-# Determine camera mode
-USE_PICAMERA = USE_RTSP = USE_MJPEG = False
 
 # Determine if using home assistant catflap control
 USE_HA = False
@@ -397,7 +424,7 @@ class Sequential_Cascade_Feeder():
         logging.debug('Runtime: %.2f seconds', time.time() - start_time)
         return cascade_obj
 
-    def try_get_with_retries(url, headers, description="", retries=2, timeout=2):
+    def try_get_with_retries(self, url, headers, description="", retries=2, timeout=2):
         for attempt in range(1, retries + 1):
             try:
                 response = requests.get(url, headers=headers, timeout=timeout)
@@ -410,7 +437,7 @@ class Sequential_Cascade_Feeder():
         logging.error(f"{description} failed after {retries} attempts.")
         return None
 
-    def try_post_with_retries(url, description, retries=2, timeout=2):
+    def try_post_with_retries(self, url, description, retries=2, timeout=2):
         for attempt in range(retries + 1):
             try:
                 req = urllib.request.Request(url=url, method="POST")
@@ -439,7 +466,7 @@ class Sequential_Cascade_Feeder():
             "Authorization": f"Bearer {config.HA_REST_TOKEN}",
             "content-type": "application/json"
         }
-        response = try_get_with_retries(config.HA_REST_URL, headers, description="Query HA catflap state")
+        response = self.try_get_with_retries(config.HA_REST_URL, headers, description="Query HA catflap state")
         if not response:
             self.bot.send_text("⚠️  Could not query HA catflap state – aborting unlock.")
             return
@@ -456,7 +483,7 @@ class Sequential_Cascade_Feeder():
 
         # Unlock catflap
         if catflap_state in {"locked_out", "locked_all"}:
-            if try_post_with_retries(config.HA_UNLOCK_WEBHOOK, "Unlock catflap"):
+            if self.try_post_with_retries(config.HA_UNLOCK_WEBHOOK, "Unlock catflap"):
                 self.bot.send_text(f'Catflap is [{catflap_state}], unlocking for {open_time} seconds.')
                 time.sleep(open_time)
 
@@ -467,7 +494,7 @@ class Sequential_Cascade_Feeder():
                 }
                 lock_url = lock_url_map[catflap_state]
 
-                if try_post_with_retries(lock_url, f"Re-lock catflap to [{catflap_state}]"):
+                if self.try_post_with_retries(lock_url, f"Re-lock catflap to [{catflap_state}]"):
                     self.bot.send_text(f'Catflap is back to previous state: [{catflap_state}].')
                 else:
                     self.bot.send_text(f"❌️ Error: Failed to re-lock catflap to previous state [{catflap_state}].")
