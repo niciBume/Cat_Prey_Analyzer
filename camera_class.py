@@ -132,7 +132,7 @@ class Camera:
                 if self.pause_event.is_set():
                     with self._pause_lock:
                         if len(self.q):
-                            logging.info("Pausing queue and clearing all frames...")
+                            logging.info(f"Pausing queue and clearing all frames [{len(self.q)}]")
                             self.q.clear()
                         logging.info(f"Queueing paused for {self.pause_duration} seconds.")
                         pause_duration = self.pause_duration
