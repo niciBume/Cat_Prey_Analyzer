@@ -3,8 +3,8 @@ import os
 
 
 def _require_env(var: str) -> str:
-    val = os.getenv(var, "CHANGE_ME")
-    if val == "CHANGE_ME":
+    val = os.getenv(var)
+    if val is None:
         raise RuntimeError(f"Environment variable {var} must be set.")
     return val
 
@@ -45,7 +45,7 @@ if SLEEP_INTERVAL < 0:
     raise ValueError("SLEEP_INTERVAL must be non-negative")
 
 # Queue filling cycles
-FILL_QUEUE_CYCLES = 60
+FILL_QUEUE_CYCLES = 120
 if FILL_QUEUE_CYCLES <= 0:
     raise ValueError("FILL_QUEUE_CYCLES must be positive")
 

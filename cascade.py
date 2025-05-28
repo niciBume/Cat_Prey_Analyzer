@@ -9,10 +9,9 @@ import pytz
 from datetime import datetime
 from collections import deque
 from threading import Thread
-from multiprocessing import Process, Value
-from ctypes import c_float
+from multiprocessing import Process
 import telegram
-from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
+from telegram.ext import Updater, CommandHandler
 import xml.etree.ElementTree as ET
 import urllib.request
 import config
@@ -20,7 +19,6 @@ import contextlib
 import requests
 from io import BytesIO
 import urllib.error
-import logging
 import argparse
 
 # Set up argument parser
@@ -63,16 +61,15 @@ MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
 BACKUP_COUNT = 3
 
 # Create a RotatingFileHandler
-log_handler = logging.handlers.RotatingFileHandler(
+log_handler = RotatingFileHandler(
     LOG_FILENAME, maxBytes=MAX_LOG_SIZE, backupCount=BACKUP_COUNT
 )
 
 # Optional: compress old log files after rotation
 class GzipRotator:
     def __call__(self, source, dest):
-        with open(source, 'rb') as f_in:
-            with gzip.open(dest + '.gz', 'wb') as f_out:
-                shutil.copyfileobj(f_in, f_out)
+        with open(source, 'rb') as f_in, gzip.open(dest + '.gz', 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
         os.remove(source)
 
 log_handler.rotator = GzipRotator()
@@ -310,7 +307,7 @@ class Sequential_Cascade_Feeder():
         while(True):
             if len(self.main_deque) > self.fps_offset:
                 logging.debug("Deque type: %s | Length: %d", type(self.main_deque), len(self.main_deque))
-                self.queque_worker()
+                self.queue_worker()
             else:
                 logging.debug('Nothing to work with => Queue_length: %d', len(self.main_deque))
                 time.sleep(0.15)
@@ -322,7 +319,7 @@ class Sequential_Cascade_Feeder():
                 self.open_catflap(open_time = 30)
                 self.reset_cumuli_et_al()
 
-    def queque_worker(self):
+    def queue_worker(self):
         logging.debug("Working the Queque with len: %d", len(self.main_deque))
         start_time = time.time()
 
@@ -437,19 +434,27 @@ class Sequential_Cascade_Feeder():
         logging.error(f"{description} failed after {retries} attempts.")
         return None
 
-    def try_post_with_retries(self, url, description, retries=2, timeout=2):
-        for attempt in range(retries + 1):
+    def try_post_with_retries(url, description, retries=2, timeout=2):
+        retries = int(retries)
+        timeout = float(timeout)
+        for attempt in range(1, retries + 2):  # +1 to include final attempt
             try:
-                req = urllib.request.Request(url=url, method="POST")
-                with urllib.request.urlopen(req, timeout=timeout) as response:
+                response = requests.post(url, timeout=timeout)
+                status = response.status_code
+                if 200 <= status < 300:
+                    logging.debug(f"{description} (attempt {attempt}) succeeded with status {status}.")
                     return True
-            except urllib.error.URLError as e:
-                logging.warning(f"{description} attempt {attempt + 1} failed: {e}")
-                if attempt < retries:
-                    time.sleep(1)
                 else:
-                    logging.error(f"⚠️  All {retries + 1} attempts to {description} failed.")
-                    return False
+                    logging.warning(f"{description} (attempt {attempt}) returned status {status}: {response.text}")
+            except requests.RequestException as e:
+                logging.warning(f"{description} (attempt {attempt}) failed: {e}")
+
+            if attempt < retries + 1:
+                time.sleep(1)
+
+        logging.error(f"{description} failed after {retries + 1} attempts.")
+        return False
+
 
     def open_catflap(self, open_time):
         logging.info(f"Opening catflap for {open_time} seconds...")
@@ -457,7 +462,7 @@ class Sequential_Cascade_Feeder():
         # Pause the camera queue before opening
         if hasattr(self, "camera"):
             with self.camera._pause_lock:
-                self.camera.pause_duration = float(open_time - 2)
+                self.camera.pause_duration = max(0.0, float(open_time - 2))
                 logging.debug(f"Pausing camera queue for {self.camera.pause_duration} seconds (in open_catflap)")
             self.camera.pause_event.set()
 
