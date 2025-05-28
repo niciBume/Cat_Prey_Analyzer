@@ -160,12 +160,9 @@ class Camera:
                         continue
 
                     # Apply flip if configured
-                    if self.hflip and self.vflip:
-                        frame = cv2.flip(frame, -1)
-                    elif self.hflip:
-                        frame = cv2.flip(frame, 1)
-                    elif self.vflip:
-                        frame = cv2.flip(frame, 0)
+                        if self.hflip or self.vflip:
+                            code = -1 if self.hflip and self.vflip else (1 if self.hflip else 0)
+                            frame = cv2.flip(frame, code)
 
                 now = time.time()
                 if now - last_enqueue_time >= self.sleep_interval:
