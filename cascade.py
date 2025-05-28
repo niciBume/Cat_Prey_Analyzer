@@ -11,7 +11,7 @@ from collections import deque
 from threading import Thread
 from multiprocessing import Process
 import telegram
-from telegram.ext import Updater, CommandHandler
+from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
 import xml.etree.ElementTree as ET
 import urllib.request
 import config
@@ -774,7 +774,7 @@ class NodeBot():
     def __init__(self):
         self.last_msg_id = 0
         self.bot_updater = Updater(token=config.BOT_TOKEN)
-        self.bot_dispatcher = self.bot_updater.dispatchers
+        self.bot_dispatcher = self.bot_updater.dispatcher
         self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
         """
         Removed reboot for now, clicked on it too many times by mistake :P
