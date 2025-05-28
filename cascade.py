@@ -13,7 +13,6 @@ from multiprocessing import Process
 import telegram
 from telegram.ext import Updater, CommandHandler
 import xml.etree.ElementTree as ET
-import urllib.request
 import config
 import requests
 from io import BytesIO
