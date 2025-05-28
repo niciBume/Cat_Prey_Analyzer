@@ -56,22 +56,29 @@ class Camera:
 
     def _detect_camera_type(self):
         if not self.camera_url:
-            logging.info("Using internal PiCamera2.")
-            return "libcamera"
+            if PICAMERA_AVAILABLE:
+                logging.info("Using internal PiCamera2.")
+                return "libcamera"
+            else:
+                raise RuntimeError("No camera URL provided and PiCamera2 is not available.")
         if isinstance(self.camera_url, int) or (isinstance(self.camera_url, str) and self.camera_url.isdigit()):
             self.camera_url = int(self.camera_url)
             logging.info("Using USB Camera.")
             return "usb"
+
         if self.camera_url.startswith("rtsp://"):
             logging.info("Using RTSP camera stream.")
             return "rtsp"
+
         if self.camera_url.startswith("http://") or self.camera_url.startswith("https://"):
             logging.info("Using MJPEG camera stream.")
             return "mjpeg"
+
         if self.camera_url.endswith(".mp4") or self.camera_url.endswith(".avi"):
             logging.info("Using avi/mp4 video file.")
             return "video"
-        raise ValueError("Unsupported CAMERA_URL format")
+
+        raise ValueError(f"Unsupported CAMERA_URL format: {self.camera_url}")
 
     def _initialize_camera(self):
         if self.camera_type == "libcamera":
