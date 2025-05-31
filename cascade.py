@@ -5,7 +5,6 @@ import shutil
 import numpy as np
 from pathlib import Path
 import os, cv2, time, csv
-import pytz
 from datetime import datetime
 from collections import deque
 from threading import Thread
@@ -53,13 +52,9 @@ args = parser.parse_args()
 if args.camera_url:
     CAMERA_URL = args.camera_url
 
-LOG_FILENAME = 'log/CatPreyAnalyzer.log'
-MAX_LOG_SIZE = 10 * 1024 * 1024  # 10 MB
-BACKUP_COUNT = 3
-
 # Create a RotatingFileHandler
 log_handler = RotatingFileHandler(
-    LOG_FILENAME, maxBytes=MAX_LOG_SIZE, backupCount=BACKUP_COUNT
+    config.LOG_FILENAME, maxBytes=config.MAX_LOG_SIZE, backupCount=config.BACKUP_COUNT
 )
 
 # Optional: compress old log files after rotation
@@ -74,12 +69,19 @@ log_handler.namer = lambda name: name + ".gz"
 
 # Set format and log level
 formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(message)s',
-                              datefmt='%m/%d/%Y-%I:%M:%S%p')
+                              datefmt='%x-%X')
 log_handler.setFormatter(formatter)
 
 # Apply to root logger
 logger = logging.getLogger()
-logger.setLevel(logging.INFO)
+
+# Parse log level dynamically from --log
+log_level_str = args.log.upper()
+log_level = getattr(logging, log_level_str, None)
+if not isinstance(log_level, int):
+    raise ValueError(f"Invalid log level: {args.log}")
+logger.setLevel(log_level)
+
 logger.addHandler(log_handler)
 
 # Optional: also print to console
@@ -89,6 +91,7 @@ logger.addHandler(log_handler)
 
 
 logging.info('Starting CatPreyAnalyzer...')
+logging.info(f"Rotating log after {config.MAX_LOG_SIZE/1024/1024} MB")
 
 if CAMERA_URL:
     logging.info("Using following CAMERA_URL: %s", CAMERA_URL)
@@ -104,9 +107,9 @@ HA_REQUIRED_ATTRS = ["HA_UNLOCK_WEBHOOK", "HA_LOCK_OUT_WEBHOOK", "HA_LOCK_ALL_WE
 # Check if all required attributes exist
 if all(hasattr(config, attr) for attr in HA_REQUIRED_ATTRS):
     USE_HA = True
-
 cat_cam_py = str(Path(os.getcwd()).parents[0])
 logging.debug('CatCamPy: %s', cat_cam_py)
+logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
 
 class Spec_Event_Handler():
     def __init__(self):
@@ -324,10 +327,10 @@ class Sequential_Cascade_Feeder():
         timestamp, frame = self.main_deque[self.fps_offset]
         cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
         logging.debug('Runtime: %.2f seconds', time.time() - start_time)
-        done_timestamp = datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f")
+        done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
         logging.debug('Timestamp at Done Runtime: %s', done_timestamp)
 
-        overhead = datetime.strptime(done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(timestamp, "%Y_%m_%d_%H-%M-%S.%f")
+        overhead = datetime.strptime(done_timestamp, "%c.%f") - datetime.strptime(timestamp, "%c.%f")
         logging.debug('Overhead: %.2f seconds', overhead.total_seconds())
 
         #Add this such that the bot has some info
@@ -881,7 +884,7 @@ class DummyDQueue():
 
     def dummy_queue_filler(self, main_deque):
         while(True):
-            img_name = datetime.now(pytz.timezone('Europe/Berlin')).strftime("%Y_%m_%d_%H-%M-%S.%f")
+            img_name = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
             main_deque.append((img_name, self.target_img))
             logging.info("Took image, que-length: %d", len(main_deque))
             time.sleep(0.4)

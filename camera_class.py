@@ -1,7 +1,6 @@
 from datetime import datetime
 import cv2
 import time
-import pytz
 import logging
 import gc
 import sys
@@ -30,14 +29,18 @@ class Camera:
         self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
         self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
+        self.motion_threshold = getattr(config, "MOTION_THRESHOLD", 5000)  # Adjust as needed
         self.cap = None
         self.picam2 = None
-
-        # Camera geometry and flip config
         self.cam_x = getattr(config, "CAM_WIDTH", 640)
         self.cam_y = getattr(config, "CAM_HEIGHT", 480)
         self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
         self._load_flip_overrides()
+
+        logging.info(
+            f"Motion threshold is set to {self.motion_threshold} "
+            f"({'low' if self.motion_threshold < 3000 else 'medium' if self.motion_threshold < 7000 else 'high'})"
+        )
 
         # Initialize hardware
         self._initialize_camera()
@@ -129,9 +132,10 @@ class Camera:
 
     def fill_queue(self):
         i = 0
-        tz = pytz.timezone("Europe/Berlin")
         last_enqueue_time = time.time()
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
+
+        prev_gray = None  # Store the previous grayscale frame
 
         while True:
             try:
@@ -148,6 +152,7 @@ class Camera:
                     self.pause_event.clear()
                     continue
 
+                # Capture frame
                 if self.camera_type == "libcamera" and self.picam2:
                     rgb = self.picam2.capture_array("main")
                     frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
@@ -160,13 +165,33 @@ class Camera:
                         continue
 
                     # Apply flip if configured
-                        if self.hflip or self.vflip:
-                            code = -1 if self.hflip and self.vflip else (1 if self.hflip else 0)
-                            frame = cv2.flip(frame, code)
+                    if self.hflip or self.vflip:
+                        code = -1 if self.hflip and self.vflip else (1 if self.hflip else 0)
+                        frame = cv2.flip(frame, code)
+
+                # Convert to grayscale for motion detection
+                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+                gray = cv2.GaussianBlur(gray, (21, 21), 0)
+
+                motion_detected = False
+                if prev_gray is not None:
+                    # Compute absolute difference between current and previous frame
+                    frame_delta = cv2.absdiff(prev_gray, gray)
+                    thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+                    thresh = cv2.dilate(thresh, None, iterations=2)
+                    motion_pixels = cv2.countNonZero(thresh)
+
+                    if motion_pixels > self.motion_threshold:
+                        motion_detected = True
+                        logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
+                    else:
+                        logging.debug(f"No significant motion: {motion_pixels} changed pixels.")
+
+                prev_gray = gray  # Update previous frame
 
                 now = time.time()
-                if now - last_enqueue_time >= self.sleep_interval:
-                    timestamp = datetime.now(tz).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                if motion_detected and (now - last_enqueue_time >= self.sleep_interval):
+                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
                     if len(self.q) < self.max_len:
                         self.q.append((timestamp, frame))
                         logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue length: {len(self.q)}")
