@@ -64,9 +64,15 @@ HA_UNLOCK_WEBHOOK = _require_env("HA_UNLOCK_WEBHOOK")
 HA_LOCK_OUT_WEBHOOK = _require_env("HA_LOCK_OUT_WEBHOOK")
 HA_LOCK_ALL_WEBHOOK = _require_env("HA_LOCK_ALL_WEBHOOK")
 
-# TOKEN for HA REST
+# TOKEN for home assistant REST API
 HA_REST_URL = _require_env("HA_REST_URL")
 HA_REST_TOKEN = _require_env("HA_REST_TOKEN")
+
+# Token and device ID for surepy
+SP_TOKEN = _require_env("SUREPY_TOKEN")
+SP_DEVICE_ID = _require_env("SUREPY_DEVICE_ID")
+SP_EMAIL = _require_env("SUREPY_EMAIL")
+SP_PASSWORD = _require_env("SUREPY_PASSWORD")
 
 # Camera resolution and image flipping
 CAM_WIDTH = 1920
@@ -92,7 +98,7 @@ if SLEEP_INTERVAL < 0:
     raise ValueError("SLEEP_INTERVAL must be non-negative")
 
 # Queue filling cycles
-FILL_QUEUE_CYCLES = 300
+FILL_QUEUE_CYCLES = 120
 if FILL_QUEUE_CYCLES <= 0:
     raise ValueError("FILL_QUEUE_CYCLES must be positive")
 
