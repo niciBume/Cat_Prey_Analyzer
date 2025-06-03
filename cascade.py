@@ -121,10 +121,6 @@ logging.info(f"  Rotating log when it grows bigger than {config.MAX_LOG_SIZE/102
 if CAMERA_URL:
     logging.info("Using following CAMERA_URL: %s", CAMERA_URL)
 
-cat_cam_py = str(Path(os.getcwd()).parents[0])
-logging.debug('CatCamPy: %s', cat_cam_py)
-logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
-
 import asyncio
 
 # ── Helper to know whether to try Surepy at all ──
@@ -153,8 +149,17 @@ def use_ha():
             return False
     return True
 
+bot_instance = None
+cat_cam_py = str(Path(os.getcwd()).parents[0])
+logging.debug('CatCamPy: %s', cat_cam_py)
+logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
 USE_SUREPET = True if (use_surepy() or use_ha()) else False
-logging.info(f"Use surepy for locking = {USE_SUREPET}")
+
+if USE_SUREPET:
+    logging.info(f"Use surepy module for locking")
+else:
+    logging.info(f"Use Homeassistant for locking")
+
 
 class Sequential_Cascade_Feeder():
     def __init__(self):
@@ -1085,6 +1090,32 @@ class Spec_Event_Handler():
             #cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
             self.log_to_csv(img_event_obj=single_cascade)
 
+import signal
+
+def handle_exit(signum, frame):
+    try:
+        if bot_instance is not None:
+            bot_instance.send_text(f"⚠️ CatPreyAnalyzer received signal {signum} (e.g. CTRL+C); shutting down cleanly…")
+        else:
+            print("No bot instance available to notify Telegram.")
+    except Exception as e:
+        print(f"Failed to notify bot on exit: {e}")
+    sys.exit(0)
+
 if __name__ == '__main__':
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGTERM, handle_exit)
+
+    # Instantiate your Sequential_Cascade_Feeder and assign its bot to the global variable
     sq_cascade = Sequential_Cascade_Feeder()
-    sq_cascade.queue_handler()
+    bot_instance = sq_cascade.bot  # NodeBot instance is created in Sequential_Cascade_Feeder
+
+    try:
+        sq_cascade.queue_handler()
+    except Exception as e:
+        # Optional: send error to bot or log
+        if bot_instance is not None:
+            bot_instance.send_text(f"❌ Unhandled exception: {e}")
+        print(f"Unhandled exception: {e}")
+        sys.exit(1)
