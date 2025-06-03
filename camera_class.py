@@ -109,10 +109,10 @@ class Camera:
                 self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
             if self.camera_type == "rtsp":
                 logging.debug("RTSP stream may need time to buffer. Sleeping briefly...")
-                time.sleep(0.5)
+                time.sleep(0.2)
             if not self.cap.isOpened():
                 logging.error(f"Failed to open stream: {self.camera_url}, restarting camera")
-                time.sleep(5)
+                time.sleep(1)
                 self._restart_camera()
             else:
                 fps_reported = self.cap.get(cv2.CAP_PROP_FPS)
