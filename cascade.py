@@ -1,47 +1,30 @@
+# cascade.py
+
 """
-Catflap Control Logic Summary:
+Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
 
-- Primary Control Path: Sure Petcare API via Surepy
-  - Only used if SP_EMAIL, SP_PASSWORD, and SP_DEVICE_ID are defined in config.
-  - Lazy-initializes Surepy client.
-  - Retrieves catflap lock state via `get_catflap_state_surepy()`:
-    - Maps integer `mode` to a readable string using `lock_mode_to_str()`.
-  - Sets catflap lock state via `set_catflap_lock_state_surepy(mode)`.
-    - Accepts "unlock", "lock_in", "lock_out", or "lock".
-    - Supports both client-level and device-level control depending on Surepy version.
+- Core Controller:
+  - Orchestrates camera acquisition, frame analysis, event detection, and bot/user integration.
+  - Manages the main queue handler, which processes frames as they become available from the camera queue.
+  - Runs detection algorithms (e.g., prey detection, cat recognition) and triggers corresponding actions or notifications.
 
-- Fallback Path: Home Assistant (HA)
-  - Used if Surepy is not configured or fails.
-  - Queries HA state via `try_get_with_retries()`.
-  - Unlocks/relocks via HA webhooks using `try_post_with_retries()`.
+- Bot Integration:
+  - Handles Telegram (or other) bot commands, such as `/sendlivepic`, status queries, and user-initiated actions.
+  - Pulls latest frames from the main queue for live image requests, ensuring frames are always recent due to camera_class logic.
 
-- Main Entry Point: `control_catflap(open_time)`
-  - Chooses Surepy or HA based on config.
-  - If flap is locked ("lock_out" or "lock"), unlocks temporarily, then relocks to original mode.
-  - Camera queue is paused for the duration of the flap open time (minus 2s for mechanism).
-  - Sends status updates via `self.bot.send_text()`.
+- Catflap & Peripheral Control:
+  - Integrates with Sure Petcare (Surepy) and/or Home Assistant for smart catflap control.
+  - Pauses/resumes camera queue and manages lock state during catflap operations.
+
+- Startup & Fault Tolerance:
+  - Initializes all components, launches threads for camera and bot.
+  - Monitors and recovers from errors in camera or analysis loops.
 
 - Logging:
-  - Info-level logs for state changes and actions.
-  - Warnings and errors for retries, exceptions, and fallbacks.
-# Determine if using SurePetCare catflap control
-HA_REQUIRED_ATTRS_HA = ["HA_UNLOCK_WEBHOOK", "HA_LOCK_OUT_WEBHOOK", "HA_LOCK_ALL_WEBHOOK", "HA_REST_URL"]
-HA_REQUIRED_ATTRS_SP = ["SP_EMAIL", "SP_PASSWORD", "SP_DEVICE_ID"]
-if all(hasattr(config, attr) for attr in HA_REQUIRED_ATTRS_HA) or all(hasattr(config, attr) for attr in HA_REQUIRED_ATTRS_SP):
-    USE_SUREPET = True
-else:
-    USE_SUREPET = False
+  - Provides info, warning, and error logs for all major operations.
+  - Reports status to the bot for user transparency.
 
-        # Choose Surepy if configured, otherwise HA
-        if use_surepy():
-            try:
-                asyncio.run(surepy_flow())
-            except Exception as e:
-                logging.error(f"Unexpected error in surepy_flow: {e}\nFalling back to HA flow.")
-                self.ha_flow()
-        else:
-            self.ha_flow()
-
+- This file is the main entry point and nervous system of the analyzer, connecting all subsystems and user interfaces.
 """
 
 import config
@@ -171,7 +154,7 @@ def use_ha():
     return True
 
 USE_SUREPET = True if (use_surepy() or use_ha()) else False
-logging.info(f"USE_SUREPET = {USE_SUREPET}")
+logging.info(f"Use surepy for locking = {USE_SUREPET}")
 
 class Sequential_Cascade_Feeder():
     def __init__(self):
@@ -996,7 +979,6 @@ class NodeBot():
 
     def bot_send_last_casc_pic(self, bot, update):
         if self.node_last_casc_img is not None:
-            cv2.imwrite('last_casc.jpg', self.node_last_casc_img)
             caption = 'Last Cascade picture:'
             self.send_img(self.node_last_casc_img, caption)
             logging.info("Sending last cascade image to bot")
@@ -1004,9 +986,10 @@ class NodeBot():
             self.send_text('No casc img available yet...')
 
     def bot_send_live_pic(self, bot, update):
+        # self.capture_new_image() # only needed if you always want the freshest picture captured from the camera directly
+        # time.sleep(0.2)          # else, it will just send the last captured pic from the queue
         if self.node_live_img is not None:
             # Encode image to JPEG format
-            cv2.imwrite('live_img.jpg', self.node_live_img)
             caption = 'Last Live picture:'
             self.send_img(self.node_live_img, caption)
             logging.info("ℹ️  Sending live image to bot")
@@ -1098,8 +1081,8 @@ class Spec_Event_Handler():
             logging.debug('Total Inference Time: %s', single_cascade.total_inference_time)
             logging.debug('Total Runtime: %.2f seconds', time.time() - start_time)
 
-            # Write img to output dir and log csv of each event
-            cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
+            # (Write img to output dir and) log csv of each event
+            #cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
             self.log_to_csv(img_event_obj=single_cascade)
 
 if __name__ == '__main__':

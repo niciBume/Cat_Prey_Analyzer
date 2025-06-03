@@ -1,5 +1,26 @@
 # config.py
 
+"""
+Cat Prey Analyzer - Configuration Logic Summary
+
+- Central configuration for all runtime parameters and user-adjustable settings.
+  - Camera parameters: type, resolution, frame rate, flip options, etc.
+  - Motion detection: thresholds, queue lengths, analysis intervals.
+  - Integration: Telegram bot tokens, Sure Petcare credentials, Home Assistant endpoints.
+  - Paths: Data/log storage, timezone, debug flags, and feature toggles.
+
+- Usage:
+  - All core modules import settings from this file for consistent behavior.
+  - Changing system behavior (e.g., switching camera, updating credentials) is done here, not in code logic.
+
+- Special Logic:
+  - Defensive defaults for missing configuration.
+  - Conversion/validation for environment variables and sensitive secrets.
+  - Optionally loads secrets from environment or .env files for security.
+
+- Edit this file to tune detection sensitivity, enable/disable integrations, or change bot/camera behavior.
+"""
+
 import os, pytz, locale
 
 def detect_system_timezone():
@@ -54,6 +75,9 @@ locale.setlocale(locale.LC_TIME, 'de_DE.UTF-8')
 
 # This is the actual timezone object to use elsewhere
 TIMEZONE_OBJ = pytz.timezone(TIMEZONE)
+
+# Set to True if this is a dedicated machine for this purpose
+IS_DEDICATED = False
 
 # Insert Chat ID and Bot Token according to Telegram API
 CHAT_ID  = _require_env("TELEGRAM_CHAT_ID")

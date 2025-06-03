@@ -1,3 +1,31 @@
+#camera_class.py
+
+"""
+Cat Prey Analyzer - Camera and Frame Queue Logic Summary
+
+- Purpose:
+  - Handles all camera hardware interaction, frame acquisition, and queueing for downstream analysis.
+  - Implements motion detection and periodic/heartbeat frame capture in a single threaded loop.
+  - Feeds frames to the main analysis pipeline via a thread-safe queue.
+
+- Queueing Logic:
+  - Main loop (fill_queue) captures frames, detects motion, and enqueues frames on motion events.
+  - Periodic/heartbeat logic: If no motion for a configurable interval, enqueues a frame to ensure recency ("heartbeat").
+  - Queue is pre-filled at startup to ensure immediate availability to consumers (e.g., bot requests).
+  - Pausing/resuming: Queue can be paused and cleared on system or user command.
+
+- Camera Support:
+  - Supports multiple camera types (USB, PiCam via libcamera, etc.).
+  - Handles orientation (horizontal/vertical flip), error recovery, and camera restarts.
+  - Converts frames to grayscale for efficient motion detection.
+
+- Logging:
+  - Logs frame capture, queue events, motion detection, and heartbeat actions.
+  - Warnings for dropped frames, errors for camera failures and exceptions.
+
+- All queuing and acquisition logic is centralized here, ensuring reliable and recent images for analysis and user requests.
+"""
+
 from datetime import datetime
 import cv2
 import time
@@ -135,9 +163,30 @@ class Camera:
     def fill_queue(self):
         i = 0
         last_enqueue_time = time.time()
+        self.last_motion_enqueue_time = time.time() # Track last motion-based enqueue
+        heartbeat_interval = 60  # seconds, adjust as needed
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
-
         prev_gray = None  # Store the previous grayscale frame
+
+        # Pre-fill queue with enough frames to exceed fps_offset
+        num_prefill = getattr(self, "fps_offset", 2) + 1
+        for _ in range(num_prefill):
+            # Usual frame capture logic:
+            if self.camera_type == "libcamera" and self.picam2:
+                rgb = self.picam2.capture_array("main")
+                frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+            else:
+                ret, frame = self.cap.read()
+                if not ret or frame is None:
+                    continue
+                if self.hflip or self.vflip:
+                    code = -1 if self.hflip and self.vflip else (1 if self.hflip else 0)
+                    frame = cv2.flip(frame, code)
+            timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
+            if len(self.q) < self.max_len:
+                self.q.append((timestamp, frame))
+            time.sleep(self.sleep_interval)  # Small delay to avoid identical frames
+
 
         while True:
             try:
@@ -188,10 +237,15 @@ class Camera:
                         logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
                     #else:
                     #    logging.debug(f"No significant motion: {motion_pixels} changed pixels.")
+                    if motion_pixels > self.motion_threshold:
+                        motion_detected = True
+                        #logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
+
 
                 prev_gray = gray  # Update previous frame
-
                 now = time.time()
+
+                # 1. Motion-based enqueuing
                 if motion_detected and (now - last_enqueue_time >= self.sleep_interval):
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
                     if len(self.q) < self.max_len:
@@ -206,6 +260,17 @@ class Camera:
                         logging.info(f"Refreshing camera after {self.queue_cycles} frames.")
                         self._restart_camera()
                         i = 0
+
+                # 2. Heartbeat/periodic enqueuing (if no motion for heartbeat_interval)
+                elif (now - self.last_motion_enqueue_time) > heartbeat_interval and (now - last_enqueue_time >= self.sleep_interval):
+                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
+                    if len(self.q) < self.max_len:
+                        self.q.append((timestamp, frame))
+                        logging.info(f"🌙 Heartbeat: Enqueued frame at {timestamp} | Queue length: {len(self.q)} [quiet]")
+                    else:
+                        logging.warning("Queue is full (%d), dropping frame.", self.max_len)
+                    last_enqueue_time = now
+                    self.last_motion_enqueue_time = now  # treat as activity for next interval
 
                 if time.time() - getattr(self, "_last_debug_log_time", 0) > 0.5:
                     sys.stdout.write(
