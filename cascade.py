@@ -150,10 +150,10 @@ def use_surepy():
     required_attrs = ["SP_DEVICE_ID", "SP_EMAIL", "SP_PASSWORD"]
     for attr in required_attrs:
         if not hasattr(config, attr):
-            logging.debug(f"Surepy config missing attribute: {attr}")
+            logging.debug(f"❌ Surepy config missing attribute: {attr}")
             return False
         if getattr(config, attr) in (None, "", 0):
-            logging.debug(f"Surepy config attribute {attr} is empty or zero.")
+            logging.debug(f"❌ Surepy config attribute {attr} is empty or zero.")
             return False
     return True
 
@@ -163,10 +163,10 @@ def use_ha():
     required_attrs = ["HA_UNLOCK_WEBHOOK", "HA_LOCK_OUT_WEBHOOK", "HA_LOCK_ALL_WEBHOOK", "HA_REST_URL"]
     for attr in required_attrs:
         if not hasattr(config, attr):
-            logging.debug(f"HA config missing attribute: {attr}")
+            logging.debug(f"❌ HA config missing attribute: {attr}")
             return False
         if not getattr(config, attr):
-            logging.debug(f"HA config attribute {attr} is empty.")
+            logging.debug(f"❌ HA config attribute {attr} is empty.")
             return False
     return True
 
@@ -209,7 +209,7 @@ class Sequential_Cascade_Feeder():
         if hasattr(self, "camera"):
             with self.camera._pause_lock:
                 self.camera.pause_duration = max(0.0, float(open_time - 1))
-                logging.debug(f"Pausing camera queue for {self.camera.pause_duration:.2f}s")
+                logging.debug(f"ℹ️  Pausing camera queue for {self.camera.pause_duration:.2f}s")
             self.camera.pause_event.set()
 
     # ── Retry wrapper for async Surepy calls ──
@@ -246,7 +246,7 @@ class Sequential_Cascade_Feeder():
             try:
                 resp = requests.post(url, timeout=timeout)
                 if 200 <= resp.status_code < 300:
-                    logging.debug(f"{description} (attempt {attempt}) succeeded.")
+                    logging.debug(f"ℹ️  {description} (attempt {attempt}) succeeded.")
                     return True
                 logging.warning(f"{description} (attempt {attempt}) failed with status {resp.status_code}.")
             except requests.RequestException as e:
@@ -264,38 +264,42 @@ class Sequential_Cascade_Feeder():
         }
         response = self.try_get_with_retries(config.HA_REST_URL, headers, "Query HA catflap state")
         if not response:
-            self.bot.send_text("⚠️ Could not query HA catflap state – aborting.")
-            return
+            self.bot.send_text("❌ Could not query HA catflap state – aborting.")
+            return False
 
         try:
             ha_state = response.json().get("state")
             if not ha_state:
-                raise ValueError("No 'state' in HA response JSON")
+                raise ValueError("⚠️  No 'state' in HA response JSON")
         except Exception as e:
-            self.bot.send_text(f"Failed to decode HA state: {e}")
-            return
+            self.bot.send_text(f"❌ Failed to decode HA state: {e}")
+            return False
 
         open_states = {"unlocked", "locked_in"}
         if ha_state in open_states:
-            self.bot.send_text(f'Catflap already open inwards: [{ha_state}]')
-            return
+            self.bot.send_text(f'ℹ️  Catflap already open inwards: [{ha_state}]')
+            return True  # Nothing to do, treat as success
 
         closed_states = {"locked_out", "locked_all"}
         if ha_state in closed_states:
             if self.try_post_with_retries(config.HA_UNLOCK_WEBHOOK, "Unlock catflap"):
-                self.bot.send_text(f'Catflap was [{ha_state}], unlocking for {open_time}s.')
+                self.bot.send_text(f'ℹ️  Catflap was [{ha_state}], unlocking for {open_time}s.')
                 time.sleep(open_time)
                 lock_url = (config.HA_LOCK_OUT_WEBHOOK
                             if ha_state == "locked_out"
                             else config.HA_LOCK_ALL_WEBHOOK)
-                if self.try_post_with_retries(lock_url, f"Re-lock catflap to [{ha_state}]"):
-                    self.bot.send_text(f'Catflap is back to previous state: [{ha_state}].')
+                if self.try_post_with_retries(lock_url, f"ℹ️  Re-lock catflap to [{ha_state}]"):
+                    self.bot.send_text(f'ℹ️  Catflap is back to previous state: [{ha_state}].')
+                    return True
                 else:
-                    self.bot.send_text("⚠️ Error re-locking HA catflap.")
+                    self.bot.send_text("❌ Error re-locking HA catflap.")
+                    return False
             else:
-                self.bot.send_text("⚠️ Failed to unlock HA catflap.")
+                self.bot.send_text("❌ Failed to unlock HA catflap.")
+                return False
         else:
-            self.bot.send_text(f'⚠️ Unknown Home Assistant catflap state: [{ha_state}]')
+            self.bot.send_text(f'⚠️  Unknown Home Assistant catflap state: [{ha_state}]')
+            return False
 
     # ── Surepy flow ──
     async def surepy_flow(self, open_time: int):
@@ -304,63 +308,69 @@ class Sequential_Cascade_Feeder():
         state = await self.get_catflap_state_surepy()
         if state is None:
             self.bot.send_text("❌ Could not get state from Sure Petcare.")
-            return
+            return False  # Explicit failure
 
         open_states = {"unlocked", "locked_in"}
         if state in open_states:
-            self.bot.send_text(f'Catflap already open inwards: [{state}]')
-            return
+            self.bot.send_text(f'ℹ️  Catflap already open inwards: [{state}]')
+            return True  # Consider this a success, nothing to do
 
         closed_states = {"locked_out", "locked_all"}
         if state in closed_states:
             # Try unlocking with retries
             unlock_fn = lambda: self.set_catflap_lock_state_surepy("unlocked")
             if await self.try_surepy_with_retries(unlock_fn, "Unlock catflap via Surepy"):
-                self.bot.send_text(f'Catflap was [{state}], unlocking for {open_time}s.')
+                self.bot.send_text(f'ℹ️  Catflap was [{state}], unlocking for {open_time}s.')
                 await asyncio.sleep(open_time)
                 # Restore original state with retries
                 relock_fn = lambda: self.set_catflap_lock_state_surepy(state)
                 if await self.try_surepy_with_retries(relock_fn, f"Re-lock catflap to [{state}] via Surepy"):
-                    self.bot.send_text(f'Catflap is back to previous state: [{state}].')
+                    self.bot.send_text(f'ℹ️  Catflap is back to previous state: [{state}].')
+                    return True   # <-- ADD THIS for successful sequence
                 else:
-                    self.bot.send_text("⚠️ Error re-locking catflap via Sure Petcare.")
+                    self.bot.send_text("❌ Error re-locking catflap via Sure Petcare.")
+                    return False
             else:
-                self.bot.send_text("⚠️ Failed to unlock catflap via Sure Petcare.")
+                self.bot.send_text("❌ Failed to unlock catflap via Sure Petcare.")
+                return False
         else:
-            self.bot.send_text(f'⚠️ Unknown Sure Petcare catflap state: [{state}]')
+            self.bot.send_text(f'⚠️  Unknown Sure Petcare catflap state: [{state}]')
+            return False
 
     def control_catflap(self, open_time: int = 30):
         if use_surepy():
             try:
                 result = asyncio.run(self.surepy_flow(open_time))
                 if not result and use_ha():
-                    logging.warning("Surepy failed, falling back to HA flow.")
+                    logging.warning("❌ Surepy failed, falling back to HA flow.")
                     self.ha_flow(open_time)
                 elif not result:
-                    logging.error("Both Surepy and HA failed or are not configured.")
+                    logging.error("❌ Both Surepy and HA failed or are not configured.")
             except Exception as e:
-                logging.error(f"Unexpected error in Surepy flow: {e}\nFalling back to HA flow.")
+                logging.error(f"❌ Unexpected error in Surepy flow: {e}\nFalling back to HA flow.")
                 if use_ha():
                     self.ha_flow(open_time)
                 else:
-                    logging.error("Both Surepy and HA failed or are not configured.")
+                    logging.error("❌ Both Surepy and HA failed or are not configured.")
         elif use_ha():
             self.ha_flow(open_time)
         else:
-            logging.error("No catflap integration (Surepy or HA) configured!")
+            logging.error("❌ No catflap integration (Surepy or HA) configured!")
 
     # ── Lazy-initialize a Surepy client ──
     def get_surepy_client(self) -> Surepy:
         if self.surepy_client is None:
-            logging.info("🔐 Initializing Surepy client…")
+            logging.debug("🔐 Initializing Surepy client…")
             self.surepy_client = Surepy(
                 email=config.SP_EMAIL,
                 password=config.SP_PASSWORD
             )
+            logging.debug("ℹ️  Done initializing Surepy client…")
         return self.surepy_client
 
     # ── Fetch (and cache) the Flap device object ──
     async def _fetch_device(self) -> Optional[Flap]:
+        logging.debug("🚪️ Fetching catflap device from Surepy..")
         try:
             client = self.get_surepy_client()
             devices: List = await client.get_devices()
@@ -373,6 +383,7 @@ class Sequential_Cascade_Feeder():
 
             self.device_cache = device
             return device
+            logging.debug("ℹ️   Done fetching catflap device from Surepy..")
 
         except Exception as e:
             logging.error(f"❌ Error fetching device from Surepy: {e}")
@@ -385,15 +396,15 @@ class Sequential_Cascade_Feeder():
             if device is None:
                 logging.error("❌ No Surepy device available to read lock state.")
                 return None
+            logging.debug("❔ Fetching device status from Surepy..")
 
             self.mode = str(device.state).lower()
             logging.info(f"🐾 Surepy catflap_state = {self.mode}")
-            self.household_id = device.household_id
-            logging.debug(f"🐾 household_id = {self.household_id}")
+            logging.debug("ℹ️  Done fetching device status from Surepy..")
             return self.mode
 
         except Exception as e:
-            logging.error(f"Surepy error while getting state: {e}")
+            logging.error(f"❌ Surepy error while getting state: {e}")
             return None
 
     # ── Tell Surepy to change the lock state of the flap ──
@@ -415,11 +426,11 @@ class Sequential_Cascade_Feeder():
 
             state = state.lower()
             if state not in lock_states:
-                logging.error(f"Unknown lock state '{state}'")
+                logging.error(f"ℹ️  Unknown lock state '{state}'")
                 return False
 
             await lock_states[state](config.SP_DEVICE_ID)
-            logging.info(f"Set lock state to '{state}' via surepy.sac")
+            logging.info(f"ℹ️  Set lock state to '{state}' via surepy.sac")
             return True
 
         except Exception as e:
@@ -515,7 +526,7 @@ class Sequential_Cascade_Feeder():
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
         sender_img = face_events[0].output_img
-        caption = 'Cumuli: ' + str(cumuli) + ' => Cant say for sure...' + ' 🤷‍♀️' + event_str + '\nMaybe use /letin?'
+        caption = 'Cumuli: ' + str(cumuli) + '❔️ => Cant say for sure...' + ' 🤷' + event_str + '\nMaybe use /letin?'
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -538,7 +549,7 @@ class Sequential_Cascade_Feeder():
         # Start the camera fill loop
         camera_thread = Thread(target=self.camera.fill_queue, daemon=True)
         camera_thread.start()
-        self.bot.send_text(message='Starting camera loop')
+        self.bot.send_text(message='ℹ️  Starting camera loop')
 
         while(True):
             if len(self.main_deque) > self.fps_offset:
@@ -550,8 +561,8 @@ class Sequential_Cascade_Feeder():
 
             #Check if user force opens the door
             if self.bot.node_let_in_flag and USE_SUREPET:
-                logging.info("Temporary unlocking the catflap on user's behalf.")
-                self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
+                logging.info("ℹ️  Temporary unlocking the catflap on user's behalf.")
+                self.bot.send_text(message="ℹ️  Temporary unlocking the catflap on user's behalf.")
                 self.control_catflap(open_time = 40)
                 self.reset_cumuli_et_al()
 
@@ -608,8 +619,8 @@ class Sequential_Cascade_Feeder():
                     self.processing_pool.append(p)
                     #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     if USE_SUREPET:
-                        logging.info('Cat is clean, unlocking the catflap temporarily')
-                        self.bot.send_text(message='Cat is clean, unlocking the catflap temporarily')
+                        logging.info('😸️ Cat is clean, unlocking the catflap temporarily')
+                        self.bot.send_text(message='😸️ Cat is clean, unlocking the catflap temporarily')
                         self.control_catflap(open_time = 60)
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
@@ -921,11 +932,16 @@ class NodeBot():
         self.last_msg_id = 0
         self.bot_updater = Updater(token=config.BOT_TOKEN)
         self.bot_dispatcher = self.bot_updater.dispatcher
-        self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
+
         """
         Removed reboot for now, clicked on it too many times by mistake :P
-        You can re-add it if you are running this on a dedicated Pi
+        You can enable it in config.py, it if you are running this on a dedicated machine
         """
+        # test if dedicated machine
+        if config.IS_DEDICATED:
+            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin', '/REBOOT']
+        else:
+            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
 
         self.node_live_img = None
         self.node_queue_info = None
@@ -966,14 +982,17 @@ class NodeBot():
         self.node_let_in_flag = True
 
     def node_reboot(self, bot, update):
-        for i in range(15):
-            time.sleep(1)
-            bot_message = 'Rebooting in ' + str(15-i) + ' seconds...'
-            self.send_text(bot_message)
-        logging.info("Telegram bot requested a reboot. Won't do that, just logging it in syslog.")
-        self.send_text('REBOOTING.. See ya later Alligator!')
-        #os.system("sudo reboot") # won't do, some may call this as a service or standalone, not on a dedicated Pi..
-        os.system("Cat_Prey_Analyzer called a reboot")
+        # test if dedicated machine
+        if config.IS_DEDICATED:
+            for i in range(15):
+                time.sleep(1)
+                bot_message = 'Rebooting in ' + str(15-i) + ' seconds...'
+                self.send_text(bot_message)
+            logging.info("Telegram bot requested a reboot. Won't do that, just logging it.")
+            self.send_text('REBOOTING.. See ya later Alligator!')
+
+            ### also uncomment this if you REALLY need to reboot
+            #os.system("sudo reboot") # won't do, some may call this as a service or standalone, not on a dedicated Pi..
 
     def bot_send_last_casc_pic(self, bot, update):
         if self.node_last_casc_img is not None:
@@ -990,7 +1009,7 @@ class NodeBot():
             cv2.imwrite('live_img.jpg', self.node_live_img)
             caption = 'Last Live picture:'
             self.send_img(self.node_live_img, caption)
-            logging.info("Sending live image to bot")
+            logging.info("ℹ️  Sending live image to bot")
         else:
             self.send_text('No img available yet...')
 
@@ -998,7 +1017,7 @@ class NodeBot():
         if not is_encoded:
             ret, jpeg = cv2.imencode('.jpg', img)
             if not ret:
-                self.send_text('Image encoding failed.')
+                self.send_text('⚠️  Image encoding failed.')
                 return
             img = jpeg.tobytes()
 
