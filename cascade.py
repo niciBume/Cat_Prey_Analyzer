@@ -527,7 +527,15 @@ class Sequential_Cascade_Feeder():
             logging.debug(f"PC_Val: {f_event.pc_prey_val:.2f}")
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
-        sender_img = face_events[0].output_img
+        if face_events:
+            sender_img = face_events[0].output_img
+        elif event_objects:
+            sender_img = event_objects[0].output_img
+            logging.warning("No face events; falling back to first event_object image in send_dk_message.")
+        else:
+            logging.warning("No images to send in send_dk_message")
+            return
+
         caption = 'Cumuli: ' + str(cumuli) + '❔️ => Cant say for sure...' + ' 🤷' + event_str + '\nMaybe use /letin?'
         self.bot.send_img(img=sender_img, caption=caption)
         return
@@ -956,6 +964,12 @@ class NodeBot():
         #Init the listener
         self.init_bot_listener()
 
+    def get_help_menu(self):
+        bot_message = 'Following commands are supported:'
+        for command in self.commands:
+            bot_message += '\n ' + command
+        return bot_message
+
     def init_bot_listener(self):
         telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text='Hi there, NodeBot is online!')
         # Add all commands to handler
@@ -971,12 +985,13 @@ class NodeBot():
         self.bot_dispatcher.add_handler(letin)
         reboot = CommandHandler('reboot', self.node_reboot)
         self.bot_dispatcher.add_handler(reboot)
+        self.send_text(self.get_help_menu())
 
         # Start the polling stuff
         self.bot_updater.start_polling()
 
     def bot_help_cmd(self, bot, update):
-        bot_message = 'Following commands supported:'
+        bot_message = 'Following commands are supported:'
         for command in self.commands:
             bot_message += '\n ' + command
         self.send_text(bot_message)
