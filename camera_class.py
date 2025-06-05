@@ -51,7 +51,6 @@ class Camera:
         self.pause_event = Event()
         self.pause_duration = 0.0
         self._pause_lock = Lock()
-        self._last_debug_log_time = 0
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
@@ -271,13 +270,6 @@ class Camera:
                         logging.warning("Queue is full (%d), dropping frame.", self.max_len)
                     last_enqueue_time = now
                     self.last_motion_enqueue_time = now  # treat as activity for next interval
-
-                if time.time() - getattr(self, "_last_debug_log_time", 0) > 0.5:
-                    sys.stdout.write(
-                        f"\r[DEBUG] last_enqueue_time: {last_enqueue_time:.2f}s | Queue: {len(self.q):2d}   "
-                    )
-                    sys.stdout.flush()
-                    self._last_debug_log_time = time.time()
 
                 time.sleep(0.01)
 

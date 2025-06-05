@@ -28,7 +28,7 @@ Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
 """
 
 import config
-import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio, aiohttp, pydantic, pprint, json, jwt, subprocess
+import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio, aiohttp, pydantic, json, jwt, subprocess
 import logging
 from logging.handlers import RotatingFileHandler
 import numpy as np
@@ -46,6 +46,7 @@ from camera_class import Camera
 from surepy import Surepy
 from surepy.enums import LockState
 from surepy.entities.devices import Flap
+from contextlib import contextmanager
 
 # Set up argument parser
 parser = argparse.ArgumentParser(
@@ -162,7 +163,28 @@ cat_cam_py = str(Path(os.getcwd()).parents[0])
 logging.debug(f"CatCamPy: {cat_cam_py}")
 logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
 
-
+@contextmanager
+def suppress_stdout_stderr():
+    """
+    A context manager that redirects both stdout and stderr to os.devnull.
+    This should suppress output from Python and most C/C++ libraries.
+    """
+    with open(os.devnull, 'w') as devnull:
+        old_stdout_fileno = os.dup(sys.stdout.fileno())
+        old_stderr_fileno = os.dup(sys.stderr.fileno())
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(devnull.fileno(), sys.stdout.fileno())
+        os.dup2(devnull.fileno(), sys.stderr.fileno())
+        try:
+            yield
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(old_stdout_fileno, sys.stdout.fileno())
+            os.dup2(old_stderr_fileno, sys.stderr.fileno())
+            os.close(old_stdout_fileno)
+            os.close(old_stderr_fileno)
 
 class Sequential_Cascade_Feeder():
     def __init__(self):
@@ -297,7 +319,8 @@ class Sequential_Cascade_Feeder():
     # ── Surepy flow ──
     async def surepy_flow(self, open_time: int):
         # 1. Get flap state
-        state = await self.get_catflap_state_surepy()
+        with suppress_stdout_stderr():
+            state = await self.get_catflap_state_surepy()
         if state is None:
             self.bot.send_text("❌ Could not get state from Sure Petcare.")
             return False  # Explicit failure
@@ -446,7 +469,7 @@ class Sequential_Cascade_Feeder():
         csv_name = 'event_log.csv'
         file_exists = os.path.isfile(os.path.join(self.log_dir, csv_name))
         with open(os.path.join(self.log_dir, csv_name), mode='a') as csv_file:
-            headers = ['Event', 'Img_Name', 'Done_Time', 'Queue', 'Cumuli', 'CC_Cat_Bool', 'CC_Time', 'CR_Class', 'CR_Val', 'CR_Time', 'BBS_Time', 'HAAR_Time', 'FF_BBS_Bool', 'FF_BBS_Val', 'FF_BBS_Tim[...]
+            headers = ['Event', 'Img_Name', 'Done_Time', 'Queue', 'Cumuli', 'CC_Cat_Bool', 'CC_Time', 'CR_Class', 'CR_Val', 'CR_Time', 'BBS_Time', 'HAAR_Time', 'FF_BBS_Bool', 'FF_BBS_Val', 'FF_BBS_Time', 'Face_Bool', 'PC_Class', 'PC_Val', 'PC_Time', 'Total_Time']
             writer = csv.DictWriter(csv_file, delimiter=',', lineterminator='\n', fieldnames=headers)
             if not file_exists:
                 writer.writeheader()
@@ -710,7 +733,8 @@ class Cascade:
 
         #Do CC
         start_time = time.time()
-        dk_bool, cat_bool, bbs_target_img, pred_cc_bb_full, cc_inference_time = self.do_cc_mobile_stage(cc_target_img=cc_target_img)
+        with suppress_stdout_stderr():
+            dk_bool, cat_bool, bbs_target_img, pred_cc_bb_full, cc_inference_time = self.do_cc_mobile_stage(cc_target_img=cc_target_img)
         logging.debug('CC_Do Time: %.2f seconds', time.time() - start_time)
         event_img_object.cc_cat_bool = cat_bool
         event_img_object.cc_pred_bb = pred_cc_bb_full
@@ -1043,7 +1067,7 @@ class Spec_Event_Handler():
         csv_name = img_event_obj.img_name.split('_')[0] + '_' + img_event_obj.img_name.split('_')[1] + '.csv'
         file_exists = os.path.isfile(os.path.join(self.out_dir, csv_name))
         with open(os.path.join(self.out_dir, csv_name), mode='a') as csv_file:
-            headers = ['Img_Name', 'CC_Cat_Bool', 'CC_Time', 'CR_Class', 'CR_Val', 'CR_Time', 'BBS_Time', 'HAAR_Time', 'FF_BBS_Bool', 'FF_BBS_Val', 'FF_BBS_Time', 'Face_Bool', 'PC_Class', 'PC_Val', 'P[...]
+            headers = ['Img_Name', 'CC_Cat_Bool', 'CC_Time', 'CR_Class', 'CR_Val', 'CR_Time', 'BBS_Time', 'HAAR_Time', 'FF_BBS_Bool', 'FF_BBS_Val', 'FF_BBS_Time', 'Face_Bool', 'PC_Class', 'PC_Val', 'PC_Time', 'Total_Time']
             writer = csv.DictWriter(csv_file, delimiter=',', lineterminator='\n', fieldnames=headers)
             if not file_exists:
                 writer.writeheader()
