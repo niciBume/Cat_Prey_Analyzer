@@ -84,19 +84,20 @@ CHAT_ID  = _require_env("TELEGRAM_CHAT_ID")
 BOT_TOKEN = _require_env("TELEGRAM_BOT_TOKEN")
 
 # Insert webhooks for home assistant
-HA_UNLOCK_WEBHOOK = _require_env("HA_UNLOCK_WEBHOOK")
-HA_LOCK_OUT_WEBHOOK = _require_env("HA_LOCK_OUT_WEBHOOK")
-HA_LOCK_ALL_WEBHOOK = _require_env("HA_LOCK_ALL_WEBHOOK")
+HA_UNLOCK_WEBHOOK = os.environ.get("HA_UNLOCK_WEBHOOK")
+HA_LOCK_OUT_WEBHOOK = os.environ.get("HA_LOCK_OUT_WEBHOOK")
+HA_LOCK_ALL_WEBHOOK = os.environ.get("HA_LOCK_ALL_WEBHOOK")
+HA_LOCK_WEBHOOK = os.environ.get("HA_LOCK_WEBHOOK")
 
 # TOKEN for home assistant REST API
-HA_REST_URL = _require_env("HA_REST_URL")
-HA_REST_TOKEN = _require_env("HA_REST_TOKEN")
+HA_REST_URL = os.environ.get("HA_REST_URL")
+HA_REST_TOKEN = os.environ.get("HA_REST_TOKEN")
 
 # Token and device ID for surepy
-SP_TOKEN = _require_env("SUREPY_TOKEN")
-SP_DEVICE_ID = _require_env("SUREPY_DEVICE_ID")
-SP_EMAIL = _require_env("SUREPY_EMAIL")
-SP_PASSWORD = _require_env("SUREPY_PASSWORD")
+SP_TOKEN = os.environ.get("SUREPY_TOKEN")
+SP_DEVICE_ID = os.environ.get("SUREPY_DEVICE_ID")
+SP_EMAIL = os.environ.get("SUREPY_EMAIL")
+SP_PASSWORD = os.environ.get("SUREPY_PASSWORD")
 
 # Camera resolution and image flipping
 CAM_WIDTH = 1920
