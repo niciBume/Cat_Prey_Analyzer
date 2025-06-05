@@ -153,10 +153,8 @@ use_surepy = use_surepy()
 logging.info(f"ℹ️  Surepy module for locking available: {use_surepy}")
 use_ha = use_ha()
 logging.info(f"ℹ️  HA webhook for locking available: {use_ha}")
-
-if use_surepy or use_ha:
-    use_surepet = True
-else:
+use_surepet = use_surepy or use_ha
+if not use_surepet:
     logging.error("⚠️  No catflap integration (Surepy or HA) configured.")
 
 bot_instance = None
