@@ -79,26 +79,6 @@ TIMEZONE_OBJ = pytz.timezone(TIMEZONE)
 # Set to True if this is a dedicated machine for this purpose
 IS_DEDICATED = False
 
-# Insert Chat ID and Bot Token according to Telegram API
-CHAT_ID  = _require_env("TELEGRAM_CHAT_ID")
-BOT_TOKEN = _require_env("TELEGRAM_BOT_TOKEN")
-
-# Insert webhooks for home assistant
-HA_UNLOCK_WEBHOOK = os.environ.get("HA_UNLOCK_WEBHOOK")
-HA_LOCK_OUT_WEBHOOK = os.environ.get("HA_LOCK_OUT_WEBHOOK")
-HA_LOCK_ALL_WEBHOOK = os.environ.get("HA_LOCK_ALL_WEBHOOK")
-HA_LOCK_WEBHOOK = os.environ.get("HA_LOCK_WEBHOOK")
-
-# TOKEN for home assistant REST API
-HA_REST_URL = os.environ.get("HA_REST_URL")
-HA_REST_TOKEN = os.environ.get("HA_REST_TOKEN")
-
-# Token and device ID for surepy
-SP_TOKEN = os.environ.get("SUREPY_TOKEN")
-SP_DEVICE_ID = os.environ.get("SUREPY_DEVICE_ID")
-SP_EMAIL = os.environ.get("SUREPY_EMAIL")
-SP_PASSWORD = os.environ.get("SUREPY_PASSWORD")
-
 # Camera resolution and image flipping
 CAM_WIDTH = 1920
 CAM_HEIGHT = 1080
@@ -144,4 +124,23 @@ MOTION_THRESHOLD = 5000
 LOG_FILENAME = 'log/CatPreyAnalyzer.log'
 MAX_LOG_SIZE = 1 * 1024 * 1024  # 1 MB
 BACKUP_COUNT = 3
+
+# Insert Chat ID and Bot Token according to Telegram API
+CHAT_ID  = _require_env("TELEGRAM_CHAT_ID")
+BOT_TOKEN = _require_env("TELEGRAM_BOT_TOKEN")
+
+# Insert webhooks for home assistant
+HA_UNLOCK_WEBHOOK = os.environ.get("HA_UNLOCK_WEBHOOK")
+HA_LOCK_OUT_WEBHOOK = os.environ.get("HA_LOCK_OUT_WEBHOOK")
+HA_LOCK_ALL_WEBHOOK = os.environ.get("HA_LOCK_ALL_WEBHOOK")
+HA_LOCK_WEBHOOK = os.environ.get("HA_LOCK_WEBHOOK")
+
+# TOKEN for home assistant REST API
+HA_REST_URL = os.environ.get("HA_REST_URL")
+HA_REST_TOKEN = os.environ.get("HA_REST_TOKEN")
+
+# Token and device ID for surepy
+SP_DEVICE_ID = os.environ.get("SUREPY_DEVICE_ID")
+SP_EMAIL = os.environ.get("SUREPY_EMAIL")
+SP_PASSWORD = os.environ.get("SUREPY_PASSWORD")
 
