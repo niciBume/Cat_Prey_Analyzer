@@ -4,6 +4,8 @@ This project aims to perform Cat Prey Detection with Deep Learning on any cat in
 
 <img src="/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" width="400">
 
+The script can connect to your [Sure Petcare Catflap](https://www.surepetcare.com/en-us/pet-doors/microchip-cat-flap-connect), either by logging directly into your account through the surepy module from [https://github.com/benleb/surepy](https://github.com/benleb/surepy) or your homeassistant [hass.io](https://hass.io), or both. It tries the settings from config.py and the environment variables, first surepy, then it falls back to homeassistant.
+
 # Related work
 This isn't the first approach at solving the mentioned problem! There have been other equally (if not better) valid approaches such as the [Catcierge](https://github.com/JoakimSoderberg/catcierge) which analyzes the silhouette of the cat a very recent approach of the [AI powered Catflap](https://www.theverge.com/tldr/2019/6/30/19102430/amazon-engineer-ai-powered-catflap-prey-ben-hamm).
 The difference of this project however is that it aims to solve *general* cat-prey detection through a vision based approach. Meaning that this should work for any cat! 
@@ -15,25 +17,34 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
-- Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as in [this](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id). Now you can edit ```cascade.py NodeBot().__init__()``` at line 613 and insert your Telegram credentials: 
+- Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as in [this](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
+- Now create a bash file to save all your secrets to, then source it before starting `cascade.py`.
+
+  The file should contain something like this:
+
   ```
-  def __init__(self):
-        #Insert Chat ID and Bot Token according to Telegram API
-        self.CHAT_ID = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-        self.BOT_TOKEN = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+  # Chat ID and Bot Token according to Telegram API
+  export TELEGRAM_CHAT_ID="XXXXXXXXXX"
+  export TELEGRAM_BOT_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+  # Webhook for home assistant
+  export HA_WEBHOOK="http://192.168.1.24:8123/api/webhook/_-UnlockLockCatFlapNow-_"
+
+  # URL and TOKEN for homeassistant REST API
+  export HA_REST_URL="http://192.168.1.24:8123/api/states/sensor.cat_flap_sureflap"
+  export HA_REST_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+  # Token and device ID for surepy
+  export SUREPY_DEVICE_ID="XXXXXXXXXX"
+  export SUREPY_EMAIL="XXXXXXXXXX"
+  export SUREPY_PASSWORD="XXXXXXXXXX"
   ```
-  I am working on a environement variable script that will automate this process. In the meanwhile sorry for this.
-  
-  - If you want your RPI to directly boot into the Cat_Prey_Analyzer then I suggest you use a crontab. To do so, on the RPI type: ```crontab -e``` and enter 
+
+- Edit `config.py` to your liking, between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`, then start `cascade.py` like this:
   ```
-  @reboot sleep 30 && sudo /home/pi/CatPreyAnalyzer/catCam_starter.sh
+  $> source .src; python3 cascade.py rtsp://192.168.1.1//unicast --log
   ```
-  - Don't forget to make the ```catCam_starter.sh``` executable by performing 
-  ```
-  chmod +x /home/pi/CatPreyAnalyzer/catCam_starter.sh
-  ```
-  - Reboot and enjoy!
-  
+
   By following all these steps, you should now be greated by your Bot at startup:
 
   <img src="/readme_images/bot_good_morning.png" width="400">
