@@ -18,7 +18,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 - Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
 - Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as in [this](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
-- Now create a bash file to save all your secrets to, then source it before starting `cascade.py`.
+- Now create an env file to save all your secrets to, then source it before starting `cascade.py`.
 
   The file should contain something like this:
 
@@ -42,7 +42,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Edit `config.py` to your liking, between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`, then start `cascade.py` like this:
   ```
-  $> source .src; python3 cascade.py rtsp://192.168.1.1//unicast --log
+  $> source .env; python3 cascade.py rtsp://192.168.1.1//unicast --log
   ```
 
   By following all these steps, you should now be greated by your Bot at startup:
