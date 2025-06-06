@@ -52,14 +52,20 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
   The system is now running and you can check out the bot commands via ```/help```. Be aware that you need patience at startup, as the models take up to 5 min to be completely loaded, as they are very large.
 
 # Configuring Surepy
-To use the surepy python module directly to control the SurePetcare API, you need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), and set your credentials (email and password) in the 'env' file.
+For these two following steps you need to get your Sure Petcare 'catflap ID' by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note down the ID from the URL you see in your browser, it'll look something like this: "https://surepetcare.io/device/12345678/details".
+
+To use the surepy python module directly to control the SurePetcare API, you need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), then set your catflap ID and credentials (email and password) in the 'env' file.
+
 # Configuring Home Assistant
-For getting the current status of the catflap, you need to access the REST API of homeassistant, for which you need to generate a token, see [this article](https://developers.home-assistant.io/docs/api/rest/).
-Put your URL and access token (without the 'Bearer ' part) into the 'env' file. The URL will look something like this (replace 'sensor.cat_flap' with the actual name of your sensor in hassio):
+You need two URLs for controlling the catflap through homeassistant, a REST API URL for getting the current status and a WEBHOOK URL for controlling it.
+
+For the REST API you need to generate a token like shown in [this article](https://developers.home-assistant.io/docs/api/rest/).
+
+Put your URL and access token (without the 'Bearer ' part) into the 'env' file. The URL will look something like this (replace 'sensor.cat_flap_xxx' with the actual name of your sensor in hassio):
 ```
 http://192.168.1.24:8123/api/states/sensor.cat_flap_xxx
 ```
-You'll also need to create an automation for controlling the catflap through a webhook. Mine looks like this:
+The webhook triggered automation controlling the catflap looks like this:
 ```
 alias: CatPreyAnalyser Lock/Unlock
 description: "Webhook for controlling the catflap from CatPreyAnalyzer"
@@ -75,7 +81,6 @@ actions:
       flap_id: "12345678"
     action: sureha.set_lock_state
 ```
-Get your flap ID by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Now you can take the ID from the URL you see in your browser, it'll be something like this: "https://surepetcare.io/device/12345678/details".
 
 # A word of caution
 This project uses deeplearning! Contrary to popular belief DL is **not** black magic (altough close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there are going to be instances where the system will produce absurdly wrong statements such as:
