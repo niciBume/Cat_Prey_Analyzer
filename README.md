@@ -4,6 +4,8 @@ This project aims to perform Cat Prey Detection with Deep Learning on any cat in
 
 <img src="/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" width="400">
 
+The script can connect to your [Sure Petcare Catflap](https://www.surepetcare.com/en-us/pet-doors/microchip-cat-flap-connect), either by logging directly into your account through the surepy module from [https://github.com/benleb/surepy](https://github.com/benleb/surepy) or your homeassistant [hass.io](https://hass.io), or both. It tries the settings from config.py and the environment variables, first surepy, then it falls back to homeassistant.
+
 # Related work
 This isn't the first approach at solving the mentioned problem! There have been other equally (if not better) valid approaches such as the [Catcierge](https://github.com/JoakimSoderberg/catcierge) which analyzes the silhouette of the cat a very recent approach of the [AI powered Catflap](https://www.theverge.com/tldr/2019/6/30/19102430/amazon-engineer-ai-powered-catflap-prey-ben-hamm).
 The difference of this project however is that it aims to solve *general* cat-prey detection through a vision based approach. Meaning that this should work for any cat! 
@@ -15,31 +17,71 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
-- Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as in [this](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id). Now you can edit ```cascade.py NodeBot().__init__()``` at line 613 and insert your Telegram credentials: 
+- Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as in [this](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
+- Now create an env file to save all your secrets to, then source it before starting `cascade.py`.
+
+  The file should contain something like this:
+
   ```
-  def __init__(self):
-        #Insert Chat ID and Bot Token according to Telegram API
-        self.CHAT_ID = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
-        self.BOT_TOKEN = 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX'
+  # Chat ID and Bot Token according to Telegram API
+  export TELEGRAM_CHAT_ID="XXXXXXXXXX"
+  export TELEGRAM_BOT_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+  # Webhook for home assistant
+  export HA_WEBHOOK="http://192.168.1.24:8123/api/webhook/_-UnlockLockCatFlapNow-_"
+
+  # URL and TOKEN for homeassistant REST API
+  export HA_REST_URL="http://192.168.1.24:8123/api/states/sensor.cat_flap_sureflap"
+  export HA_REST_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+
+  # Token and device ID for surepy
+  export SUREPY_DEVICE_ID="XXXXXXXXXX"
+  export SUREPY_EMAIL="XXXXXXXXXX"
+  export SUREPY_PASSWORD="XXXXXXXXXX"
   ```
-  I am working on a environement variable script that will automate this process. In the meanwhile sorry for this.
-  
-  - If you want your RPI to directly boot into the Cat_Prey_Analyzer then I suggest you use a crontab. To do so, on the RPI type: ```crontab -e``` and enter 
+
+- Edit `config.py` to your liking, between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`, then start `cascade.py` like this:
   ```
-  @reboot sleep 30 && sudo /home/pi/CatPreyAnalyzer/catCam_starter.sh
+  $> source .env; python3 cascade.py rtsp://192.168.1.1//unicast --log
   ```
-  - Don't forget to make the ```catCam_starter.sh``` executable by performing 
-  ```
-  chmod +x /home/pi/CatPreyAnalyzer/catCam_starter.sh
-  ```
-  - Reboot and enjoy!
-  
+
   By following all these steps, you should now be greated by your Bot at startup:
 
   <img src="/readme_images/bot_good_morning.png" width="400">
   
-  The system is now running and you can check out the bot commands via ```/help```. Be aware that you need patience at startup, as the models take up to 5 min to be   completely loaded, as they are very large.
-  
+  The system is now running and you can check out the bot commands via ```/help```. Be aware that you need patience at startup, as the models take up to 5 min to be completely loaded, as they are very large.
+
+# Configuring Surepy
+For these two following steps you need to get your Sure Petcare 'catflap ID' by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note down the ID from the URL you see in your browser, it'll look something like this: "https://surepetcare.io/device/12345678/details".
+
+To use the surepy python module directly to control the SurePetcare API, you need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), then set your catflap ID and credentials (email and password) in the 'env' file.
+
+# Configuring Home Assistant
+You need two URLs for controlling the catflap through homeassistant, a REST API URL for getting the current status and a WEBHOOK URL for controlling it.
+
+For the REST API you need to generate a token like shown in [this article](https://developers.home-assistant.io/docs/api/rest/).
+
+Put your URL and access token (without the 'Bearer ' part) into the 'env' file. The URL will look something like this (replace 'sensor.cat_flap_xxx' with the actual name of your sensor in hassio):
+```
+http://192.168.1.24:8123/api/states/sensor.cat_flap_xxx
+```
+The webhook triggered automation controlling the catflap looks like this:
+```
+alias: CatPreyAnalyser Lock/Unlock
+description: "Webhook for controlling the catflap from CatPreyAnalyzer"
+triggers:
+  - webhook_id: LockUnlockCatFlap_fromCatPreyAnalyzer
+    allowed_methods:
+      - POST
+    local_only: true
+    trigger: webhook
+actions:
+  - data:
+      lock_state: "{{ trigger.json.ha_state }}"
+      flap_id: "12345678"
+    action: sureha.set_lock_state
+```
+
 # A word of caution
 This project uses deeplearning! Contrary to popular belief DL is **not** black magic (altough close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there are going to be instances where the system will produce absurdly wrong statements such as:
 
