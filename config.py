@@ -19,6 +19,7 @@ Cat Prey Analyzer - Configuration Logic Summary
   - Optionally loads secrets from environment or .env files for security.
 
 - Edit this file to tune detection sensitivity, enable/disable integrations, or change bot/camera behavior.
+  The used values are a safe starting point, tune to your own liking (depending on your hardware).
 """
 
 import os, pytz, locale
@@ -49,11 +50,10 @@ def detect_system_timezone():
 def _require_env(var: str) -> str:
     val = os.getenv(var)
     if val is None:
-        raise RuntimeError(f"Environment variable {var} must be set.")
+        raise RuntimeError(f"Environment variable {var} must be set.\n\nDid you forget to source your 'env' file?")
     return val
 
-# Set the timezone or get it from the system timezone
-#TIMEZONE = "Europe/Berlin"
+# Get system internal timezone
 TIMEZONE = globals().get("TIMEZONE", None)  # default: None
 
 # Validate TIMEZONE or fall back to system
@@ -70,11 +70,13 @@ if TIMEZONE == "UTC":
     or set/check for the correct system timezone. Please use a canonical TZ identifier from:
     https://en.wikipedia.org/wiki/List_of_tz_database_time_zones""")
 
+### START EDITABLE VARS ###
+
+# Or set timezone manually
+#TIMEZONE = "Europe/Berlin"
+
 # set locale
 locale.setlocale(locale.LC_TIME, 'de_DE.UTF-8')
-
-# This is the actual timezone object to use elsewhere
-TIMEZONE_OBJ = pytz.timezone(TIMEZONE)
 
 # Set to True if this is a dedicated machine for this purpose
 IS_DEDICATED = False
@@ -125,22 +127,29 @@ LOG_FILENAME = 'log/CatPreyAnalyzer.log'
 MAX_LOG_SIZE = 1 * 1024 * 1024  # 1 MB
 BACKUP_COUNT = 3
 
-# Insert Chat ID and Bot Token according to Telegram API
+### END EDITABLE VARS ###
+#
+# You don't have to set things from here on down,                       #
+# config.py is importing these from environment variables               #
+# you can create a hidden file and import it before starting cascade.py #
+# $> source .src; python3 cascade.py rtsp://192.168.1.1//unicast --log  #
+
+# This is the actual timezone object to use elsewhere
+TIMEZONE_OBJ = pytz.timezone(TIMEZONE)
+
+# Chat ID and Bot Token according to Telegram API
 CHAT_ID  = _require_env("TELEGRAM_CHAT_ID")
 BOT_TOKEN = _require_env("TELEGRAM_BOT_TOKEN")
 
-# Insert webhooks for home assistant
-HA_UNLOCK_WEBHOOK = os.environ.get("HA_UNLOCK_WEBHOOK")
-HA_LOCK_OUT_WEBHOOK = os.environ.get("HA_LOCK_OUT_WEBHOOK")
-HA_LOCK_ALL_WEBHOOK = os.environ.get("HA_LOCK_ALL_WEBHOOK")
-HA_LOCK_WEBHOOK = os.environ.get("HA_LOCK_WEBHOOK")
+# Webhook for home assistant
+HA_WEBHOOK = os.environ.get("HA_WEBHOOK")
 
-# TOKEN for home assistant REST API
+# URL and TOKEN for homeassistant REST API
 HA_REST_URL = os.environ.get("HA_REST_URL")
 HA_REST_TOKEN = os.environ.get("HA_REST_TOKEN")
 
 # Token and device ID for surepy
-SP_DEVICE_ID = os.environ.get("SUREPY_DEVICE_ID")
-SP_EMAIL = os.environ.get("SUREPY_EMAIL")
-SP_PASSWORD = os.environ.get("SUREPY_PASSWORD")
-
+SUREPY_DEVICE_ID = os.environ.get("SUREPY_DEVICE_ID")
+SUREPY_EMAIL = os.environ.get("SUREPY_EMAIL")
+SUREPY_PASSWORD = os.environ.get("SUREPY_PASSWORD")
+SUREPY_TOKEN = os.environ.get("SUREPY_TOKEN")

@@ -127,7 +127,7 @@ import asyncio
 # ── Helper to know whether to try Surepy at all ──
 def use_surepy():
     """Return True if Surepy is configured and client/ID are set."""
-    required_attrs = ["SP_DEVICE_ID", "SP_EMAIL", "SP_PASSWORD"]
+    required_attrs = ["SUREPY_DEVICE_ID", "SUREPY_EMAIL", "SUREPY_PASSWORD", "SUREPY_TOKEN"]
     for attr in required_attrs:
         if not hasattr(config, attr):
             logging.debug(f"⚠️  Surepy config missing attribute: {attr}")
@@ -135,12 +135,13 @@ def use_surepy():
         if getattr(config, attr) in (None, "", 0):
             logging.debug(f"⚠️  Surepy config attribute {attr} is empty or zero.")
             return False
+    logging.debug(f"\nSUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}\nSUREPY_EMAIL={config.SUREPY_EMAIL}\nSUREPY_PASSWORD=true\nSUREPY_TOKEN={config.SUREPY_TOKEN}")
     return True
 
 # ── Helper to know whether to try HA at all ──
 def use_ha():
     """Return True if all HA config attributes are set."""
-    required_attrs = ["HA_UNLOCK_WEBHOOK", "HA_LOCK_WEBHOOK", "HA_REST_URL"]
+    required_attrs = ["HA_WEBHOOK", "HA_REST_URL", "HA_REST_TOKEN"]
     for attr in required_attrs:
         if not hasattr(config, attr):
             logging.debug(f"⚠️  HA config missing attribute: {attr}")
@@ -148,12 +149,20 @@ def use_ha():
         if not getattr(config, attr):
             logging.debug(f"⚠️  HA config attribute {attr} is empty.")
             return False
+    logging.debug(f"\nHA_WEBHOOK={config.HA_WEBHOOK}\nHA_REST_URL={config.HA_REST_URL}\nHA_REST_TOKEN={config.HA_REST_TOKEN}")
     return True
 
 use_surepy = use_surepy()
-logging.info(f"ℹ️  Surepy module for locking available: {use_surepy}")
+if use_surepy:
+    logging.info(f"ℹ️  Surepy module for locking available: {use_surepy}")
+else:
+    logging.info(f"ℹ️  Surepy module for locking NOT available!")
+
 use_ha = use_ha()
-logging.info(f"ℹ️  HA webhook for locking available: {use_ha}")
+if use_ha:
+    logging.info(f"ℹ️  HA webhook for locking available: {use_ha}")
+else:
+    logging.info(f"ℹ️  HA webhook for locking NOT available!")
 use_surepet = use_surepy or use_ha
 if not use_surepet:
     logging.error("⚠️  No catflap integration (Surepy or HA) configured.")
@@ -299,11 +308,11 @@ class Sequential_Cascade_Feeder():
 
         closed_states = {"locked_out", "locked_all"}
         if ha_state in closed_states:
-            if self.try_post_with_retries(config.HA_UNLOCK_WEBHOOK, ha_state, "Unlock catflap"):
+            if self.try_post_with_retries(config.HA_WEBHOOK, "unlocked", "Unlock catflap"):
                 self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {open_time}s.")
                 self.pause_camera_for(open_time)
                 time.sleep(open_time)
-                if self.try_post_with_retries(config.HA_LOCK_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}]"):
+                if self.try_post_with_retries(config.HA_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}]"):
                     self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{ha_state}].")
                     return True
                 else:
@@ -370,8 +379,9 @@ class Sequential_Cascade_Feeder():
         if self.surepy_client is None:
             logging.debug("🔐 Initializing Surepy client…")
             self.surepy_client = Surepy(
-                email=config.SP_EMAIL,
-                password=config.SP_PASSWORD
+                email=config.SUREPY_EMAIL,
+                password=config.SUREPY_PASSWORD,
+                # auth_token=config.SUREPY_TOKEN #  You should use auth_token instead if you have an API token.
             )
             logging.debug("ℹ️  Done initializing Surepy client…")
         return self.surepy_client
@@ -381,11 +391,11 @@ class Sequential_Cascade_Feeder():
         try:
             client = self.get_surepy_client()
             devices: List = await client.get_devices()
-            target_id = str(config.SP_DEVICE_ID)
+            target_id = str(config.SUREPY_DEVICE_ID)
             device = next((d for d in devices if str(d.id) == target_id), None)
 
             if device is None:
-                logging.error(f"❌ Device ID {config.SP_DEVICE_ID} not found among Surepy devices.")
+                logging.error(f"❌ Device ID {config.SUREPY_DEVICE_ID} not found among Surepy devices.")
                 return None
 
             self.device_cache = device
@@ -400,7 +410,7 @@ class Sequential_Cascade_Feeder():
         try:
             device = await self._fetch_device()
             if device is None:
-                logging.error("❌ No Surepy device available to read lock state.")
+                logging.error(f"❌ No Surepy device available to read lock state. SUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}")
                 return None
             self.mode = str(device.state).lower()
             logging.info(f"🐾 Surepy catflap_state = {self.mode}")
@@ -431,7 +441,7 @@ class Sequential_Cascade_Feeder():
                 logging.error(f"❌ Unknown lock state \"{state}\"")
                 return False
 
-            await lock_states[state](config.SP_DEVICE_ID)
+            await lock_states[state](config.SUREPY_DEVICE_ID)
             logging.info(f"ℹ️  Set lock state to \"{state}\" via surepy.sac")
             return True
 
