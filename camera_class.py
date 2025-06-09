@@ -46,6 +46,8 @@ except ImportError:
 
 class Camera:
     def __init__(self, q, camera_url):
+        self.restart_attempts = 0
+        self.max_restart_attempts = 5
         self.q = q
         self.pause_event = Event()
         self.pause_duration = 0.0
@@ -57,6 +59,7 @@ class Camera:
         self.cam_x = getattr(config, "CAM_WIDTH", 640)
         self.cam_y = getattr(config, "CAM_HEIGHT", 480)
         self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
+        self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
         self.cap = None
@@ -143,9 +146,14 @@ class Camera:
                 logging.debug("RTSP stream may need time to buffer. Sleeping briefly...")
                 time.sleep(0.2)
             if not self.cap.isOpened():
-                logging.error(f"Failed to open stream: {self.camera_url}, restarting camera")
-                time.sleep(1)
-                self._restart_camera()
+                logging.error(f"Failed to open stream: {self.camera_url}")
+                if self.restart_attempts < self.max_restart_attempts:
+                    self.restart_attempts += 1
+                    logging.error(f"Restart attempt {self.restart_attempts}/{self.max_restart_attempts}")
+                    time.sleep(1)
+                    self._restart_camera()
+                else:
+                    raise RuntimeError(f"Failed to initialize camera after {self.max_restart_attempts} attempts")
             else:
                 fps_reported = self.cap.get(cv2.CAP_PROP_FPS)
                 logging.debug(f"Video stream {self.camera_type} opened successfully with: {self.camera_url}.")
