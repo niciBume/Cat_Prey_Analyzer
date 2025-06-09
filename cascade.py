@@ -28,7 +28,7 @@ Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
 """
 
 import config
-import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio, aiohttp, pydantic, json, jwt, subprocess
+import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio
 import logging
 from logging.handlers import RotatingFileHandler
 import numpy as np
