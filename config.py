@@ -92,8 +92,8 @@ CAM_HEIGHT = 1080
 # Optional per-source overrides
 CAMERA_FLIP_OVERRIDES = {
     "http://192.168.178.22:9000/mjpg": {"hflip": True, "vflip": False},
-    "rtsp://stream:P4Vdo@192.168.178.59:8554/unicast": {"hflip": False, "vflip": False},
-    "rtsp://stream:P4Vdo@192.168.178.58:8554/unicast": {"hflip": False, "vflip": False},
+    "rtsp://192.168.1.59:8554/unicast": {"hflip": False, "vflip": False},
+    "rtsp://user:pass@192.168.1.58:8554/unicast": {"hflip": False, "vflip": False},
     "usb:0": {"hflip": False, "vflip": True},  # Simulated USB cam identifier
     "default": {"hflip": True, "vflip": True}
 }
