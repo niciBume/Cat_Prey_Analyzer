@@ -66,22 +66,42 @@ You can also tweak the rest of the values there for better performance.
 )
 
 CAMERA_URL = None
-parser.add_argument("--log", default="INFO", help="Set the logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)")
 parser.add_argument(
-        "--camera-url",
+        '-l', '--log',
+        type=str,
+        choices=['info', 'warning', 'error', 'critical', 'debug'],
+        default='INFO',
+        help="Set the logging level",
+        )
+parser.add_argument(
+        '-c', '--camera-url',
         type=str,
         help="""Set camera input source:
-          - libcamera (default, if parameter not set)
+          - libcamera (DEFAULT fallback, if parameter not set)
           - MJPEG stream (http://...)
           - RTSP stream (rtsp://...)
           - USB webcam (CAMERA_URL is digit)
           - Video file (if URL is a file, ending in avi/mp4)
         """,
         )
+parser.add_argument(
+        '-b', '--backend',
+        type=str,
+        choices= ['surepy', 'ha'],
+        required=False,
+        help="""Force use of one of the following backends for catflap un/locking)
+          - surepy (use surepy module)
+          - ha (use homeassistant REST/Webhook)
+          make sure to define correct settings in the .source_env file
+        """,
+        )
 
 args = parser.parse_args()
 if args.camera_url:
     CAMERA_URL = args.camera_url
+if args.backend:
+    BACKEND = args.backend
+else: BACKEND = None
 
 # Create a RotatingFileHandler
 log_handler = RotatingFileHandler(
@@ -126,46 +146,66 @@ import asyncio
 
 # ── Helper to know whether to try Surepy at all ──
 def use_surepy():
-    """Return True if Surepy is configured and client/ID are set."""
-    required_attrs = ["SUREPY_DEVICE_ID", "SUREPY_EMAIL", "SUREPY_PASSWORD", "SUREPY_TOKEN"]
-    for attr in required_attrs:
-        if not hasattr(config, attr):
-            logging.debug(f"⚠️  Surepy config missing attribute: {attr}")
-            return False
-        if getattr(config, attr) in (None, "", 0):
-            logging.debug(f"⚠️  Surepy config attribute {attr} is empty or zero.")
-            return False
-    logging.debug(f"\nSUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}\nSUREPY_EMAIL={config.SUREPY_EMAIL}\nSUREPY_PASSWORD=true\nSUREPY_TOKEN={config.SUREPY_TOKEN}")
+    """Return True if Surepy is configured: device ID and credentials present."""
+    # Always require device ID
+    if not hasattr(config, "SUREPY_DEVICE_ID") or getattr(config, "SUREPY_DEVICE_ID") in (None, "", 0):
+        logging.debug("⚠️  Surepy config missing or empty SUREPY_DEVICE_ID")
+        logging.info("⚠️  Surepy module NOT available!")
+        return False
+
+    # Require either token, or both email and password
+    has_token = hasattr(config, "SUREPY_TOKEN") and getattr(config, "SUREPY_TOKEN") not in (None, "", 0)
+    has_email = hasattr(config, "SUREPY_EMAIL") and getattr(config, "SUREPY_EMAIL") not in (None, "", 0)
+    has_password = hasattr(config, "SUREPY_PASSWORD") and getattr(config, "SUREPY_PASSWORD") not in (None, "", 0)
+
+    if not (has_token or (has_email and has_password)):
+        logging.debug(
+            "⚠️  Surepy not available, config requires either SUREPY_TOKEN, or both SUREPY_EMAIL and SUREPY_PASSWORD"
+        )
+        logging.info("⚠️  Surepy module NOT available!")
+        return False
+
+    logging.debug(
+        f"\n SUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}\n"
+        f" SUREPY_EMAIL={config.SUREPY_EMAIL}\n"
+        f" SUREPY_PASSWORD={config.SUREPY_PASSWORD}\n"
+        f" SUREPY_TOKEN={config.SUREPY_TOKEN}"
+    )
+    logging.info("ℹ️  Surepy module available.")
     return True
 
 # ── Helper to know whether to try HA at all ──
 def use_ha():
-    """Return True if all HA config attributes are set."""
-    required_attrs = ["HA_WEBHOOK", "HA_REST_URL", "HA_REST_TOKEN"]
-    for attr in required_attrs:
-        if not hasattr(config, attr):
-            logging.debug(f"⚠️  HA config missing attribute: {attr}")
-            return False
-        if not getattr(config, attr):
-            logging.debug(f"⚠️  HA config attribute {attr} is empty.")
-            return False
-    logging.debug(f"\nHA_WEBHOOK={config.HA_WEBHOOK}\nHA_REST_URL={config.HA_REST_URL}\nHA_REST_TOKEN={config.HA_REST_TOKEN}")
+    """Return True if all HA config attributes are set (not None, empty, or zero)."""
+    has_webhook = hasattr(config, "HA_WEBHOOK") and getattr(config, "HA_WEBHOOK") not in (None, "", 0)
+    has_rest_url = hasattr(config, "HA_REST_URL") and getattr(config, "HA_REST_URL") not in (None, "", 0)
+    has_rest_token = hasattr(config, "HA_REST_TOKEN") and getattr(config, "HA_REST_TOKEN") not in (None, "", 0)
+
+    if not (has_webhook and has_rest_url and has_rest_token):
+        logging.debug("⚠️  Some HA config attributes are not set or empty.")
+        logging.info("⚠️  HA module NOT available!")
+        return False
+
+    logging.debug(
+        f"\n HA_WEBHOOK={getattr(config, 'HA_WEBHOOK', None)}"
+        f"\n HA_REST_URL={getattr(config, 'HA_REST_URL', None)}"
+        f"\n HA_REST_TOKEN={getattr(config, 'HA_REST_TOKEN', None)}"
+    )
+    logging.info("ℹ️  HA webhook available.")
     return True
 
 use_surepy = use_surepy()
-if use_surepy:
-    logging.info(f"ℹ️  Surepy module for locking available: {use_surepy}")
-else:
-    logging.info(f"ℹ️  Surepy module for locking NOT available!")
-
 use_ha = use_ha()
-if use_ha:
-    logging.info(f"ℹ️  HA webhook for locking available: {use_ha}")
-else:
-    logging.info(f"ℹ️  HA webhook for locking NOT available!")
-use_surepet = use_surepy or use_ha
-if not use_surepet:
-    logging.error("⚠️  No catflap integration (Surepy or HA) configured.")
+use_surepet = False
+if BACKEND == "surepy" and use_surepy:
+    logging.info("ℹ️  Using surepy module for un/locking.")
+    use_surepet = "surepy"
+if BACKEND == "ha" and use_ha:
+    logging.info("ℹ️  Using HA webhook for un/locking.")
+    use_surepet = "ha"
+if BACKEND == None:
+    use_surepet = use_surepy or use_ha
+logging.debug(f"use_surepet={use_surepet}")
 
 bot_instance = None
 cat_cam_py = str(Path(os.getcwd()).parents[0])
@@ -363,16 +403,17 @@ class Sequential_Cascade_Feeder():
             return False
 
     def control_catflap(self, open_time: int = 30):
-        if self.use_surepy:
+        if self.use_surepet != "ha" and self.use_surepy:
             result = asyncio.run(self.surepy_flow(open_time))
             if not result:
                 logging.error("❌ Using surepy to unlock catflap failed!")
+            return True
         elif self.use_ha:
             result = self.ha_flow(open_time)
             if not result:
                 logging.error("❌ Using HA to unlock catflap failed!")
-        else:
-            logging.info("ℹ️  No catflap integration (Surepy or HA) configured.")
+            return True
+        return False
 
     # ── Lazy-initialize a Surepy client ──
     def get_surepy_client(self) -> Surepy:
@@ -569,7 +610,7 @@ class Sequential_Cascade_Feeder():
         # Start the camera fill loop
         camera_thread = Thread(target=self.camera.fill_queue, daemon=True)
         camera_thread.start()
-        self.bot.send_text(message="ℹ️  Starting camera loop")
+        self.bot.send_text("ℹ️  Starting camera loop")
 
         while True:
             if len(self.main_deque) > self.fps_offset:
@@ -580,11 +621,14 @@ class Sequential_Cascade_Feeder():
                 time.sleep(0.15)
 
             # Check if user force opens the door
-            if self.bot.node_let_in_flag and self.use_surepet:
-                logging.info("🚪️ Temporary unlocking the catflap on user's behalf.")
-                self.bot.send_text(message="🚪 Temporary unlocking the catflap on user's behalf.")
-                self.control_catflap(open_time=40)
-                self.reset_cumuli_et_al()
+            if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
+                if use_surepet:
+                    self.control_catflap(open_time=20)
+                else:
+                    self.bot.send_text("ℹ️  No backend available to open the catflap.")
+                    logging.info("ℹ️  No backend available to open the catflap.")
+
+            self.reset_cumuli_et_al()
 
     def queue_worker(self):
         logging.debug(f"Working the Queue with len: {len(self.main_deque)}")
@@ -638,10 +682,7 @@ class Sequential_Cascade_Feeder():
                     p.start()
                     self.processing_pool.append(p)
                     #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
-                    if self.use_surepet:
-                        logging.info("😸️ Cat is clean, unlocking the catflap temporarily")
-                        self.bot.send_text(message="😸️ Cat is clean, unlocking the catflap temporarily")
-                        self.control_catflap(open_time=60)
+                    self.bot.send_text("😸️ Cat is clean, unlocking the catflap temporarily")
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
@@ -1007,6 +1048,7 @@ class NodeBot():
         self.send_text(bot_message)
 
     def node_let_in(self, bot, update):
+        self.send_text("🚪️ Unlocking the catflap on user's behalf.")
         self.node_let_in_flag = True
 
     def node_reboot(self, bot, update):
