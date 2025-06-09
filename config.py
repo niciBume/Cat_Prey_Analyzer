@@ -106,6 +106,9 @@ CAMERA_FLIP_OVERRIDES = {
     "default": {"hflip": True, "vflip": True}
 }
 
+# The heartbeat interval
+HEARTBEAT_INTERVAL = 60
+
 # Maximum queue length
 MAX_QUEUE_LEN = 20
 if MAX_QUEUE_LEN <= 0:

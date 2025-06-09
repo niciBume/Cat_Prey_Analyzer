@@ -60,6 +60,7 @@ class Camera:
         self.cam_y = getattr(config, "CAM_HEIGHT", 480)
         self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
+        self.heartbeat_interval = getattr(config, "HEARTBEAT_INTERVAL", 60)  # seconds
         self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
         self.cap = None
@@ -97,8 +98,7 @@ class Camera:
             if PICAMERA_AVAILABLE:
                 logging.info("Using internal PiCamera2.")
                 return "libcamera"
-            else:
-                raise RuntimeError("No camera URL provided and PiCamera2 is not available.")
+            raise RuntimeError("No camera URL provided and PiCamera2 is not available.")
         if isinstance(self.camera_url, int) or (isinstance(self.camera_url, str) and self.camera_url.isdigit()):
             self.camera_url = int(self.camera_url)
             logging.info("Using USB Camera.")
@@ -176,7 +176,6 @@ class Camera:
         i = 0
         last_enqueue_time = time.time()
         self.last_motion_enqueue_time = time.time() # Track last motion-based enqueue
-        heartbeat_interval = 60  # seconds, adjust as needed
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
         prev_gray = None  # Store the previous grayscale frame
 
@@ -270,7 +269,7 @@ class Camera:
                         i = 0
 
                 # 2. Heartbeat/periodic enqueuing (if no motion for heartbeat_interval)
-                elif (now - self.last_motion_enqueue_time) > heartbeat_interval and (now - last_enqueue_time >= self.sleep_interval):
+                elif (now - self.last_motion_enqueue_time) > self.heartbeat_interval and (now - last_enqueue_time >= self.sleep_interval):
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
                     if len(self.q) < self.max_len:
                         self.q.append((timestamp, frame))
@@ -280,10 +279,10 @@ class Camera:
                     last_enqueue_time = now
                     self.last_motion_enqueue_time = now  # treat as activity for next interval
 
-                time.sleep(0.01)
+                time.sleep(0.05)
 
             except Exception as e:
-                logging.error("Exception in fill_queue: %s", e)
+                logging.error("Exception in fill_queue (%s): %s", type(e).__name__, e)
                 self._restart_camera()
                 time.sleep(1)
 

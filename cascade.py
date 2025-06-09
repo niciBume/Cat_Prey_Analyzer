@@ -419,9 +419,9 @@ class Sequential_Cascade_Feeder():
         if self.surepy_client is None:
             logging.debug("🔐 Initializing Surepy client…")
             self.surepy_client = Surepy(
-                email=config.SUREPY_EMAIL,
-                password=config.SUREPY_PASSWORD,
-                # auth_token=config.SUREPY_TOKEN #  You should use auth_token instead if you have an API token.
+                #email=config.SUREPY_EMAIL, #  You should use auth_token instead if you have an API token.
+                #password=config.SUREPY_PASSWORD, #  You should use auth_token instead if you have an API token.
+                auth_token=config.SUREPY_TOKEN if hasattr(config, 'SUREPY_TOKEN') and config.SUREPY_TOKEN else None
             )
             logging.debug("ℹ️  Done initializing Surepy client…")
         return self.surepy_client
@@ -632,6 +632,11 @@ class Sequential_Cascade_Feeder():
     def queue_worker(self):
         logging.debug(f"Working the Queue with len: {len(self.main_deque)}")
         start_time = time.time()
+
+        # Ensure we have enough elements before accessing
+        if len(self.main_deque) <= self.fps_offset:
+            logging.warning("Not enough elements in deque for processing")
+            return
 
         # Feed the latest image in the Queue through the cascade
         timestamp, frame = self.main_deque[self.fps_offset]
