@@ -324,7 +324,7 @@ class Sequential_Cascade_Feeder():
         return False
 
     # ── Home Assistant flow ──
-    def ha_flow(self)
+    def ha_flow(self):
         headers = {
             "Authorization": f"Bearer {config.HA_REST_TOKEN}",
             "content-type": "application/json"
