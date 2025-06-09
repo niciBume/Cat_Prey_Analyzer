@@ -21,7 +21,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 - Now create an env file (I called mine .source_env, you can copy the template and change the values) to save all your secrets to, then source it before starting `cascade.py`.
 
 - Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###` to your liking, then start `cascade.py` like this:
-  ```
+  ```bash
   $ source .source_env; python3 cascade.py rtsp://192.168.1.1//unicast --log debug
   ```
 
@@ -42,13 +42,13 @@ You need two URLs for controlling the catflap through homeassistant, a REST API 
 
 For the REST API you need to generate a token like shown in [this article](https://developers.home-assistant.io/docs/api/rest/).
 
-Put your URL and access token (without the 'Bearer ' part) into your '.source_env' file. The URL will look something like this (replace 'sensor.cat_flap' with the actual name of your sensor in hassio):
-```
-http://192.168.1.24:8123/api/states/sensor.cat_flap
+Put your URL and access token (without the 'Bearer ' part) into your '.source_env' file. The URL will look something like this (replace 'sensor.cat_flap' with the actual name of your sensor in hassio), for example:
+```url
+http://192.168.1.24:8123/api/states/sensor.cat_flap`
 ```
 
 The webhook triggered automation for controlling the catflap looks like this:
-```
+```yaml
 alias: CatPreyAnalyser Lock/Unlock
 description: "Webhook for controlling the catflap from CatPreyAnalyzer"
 triggers:
@@ -70,7 +70,7 @@ You can now specify a preferred backend for un/locking the catflap, so if you co
 
 Here's a full help menue of the main script cascade.py:
 
-```
+```text
 $ python3 cascade.py -h
 usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA_URL] [-b {surepy,ha}]
 
