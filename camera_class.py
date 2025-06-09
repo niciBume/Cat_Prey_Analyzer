@@ -240,12 +240,8 @@ class Camera:
                     if motion_pixels > self.motion_threshold:
                         motion_detected = True
                         logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
-                    #else:
+                    #else: # this one is really verbose..
                     #    logging.debug(f"No significant motion: {motion_pixels} changed pixels.")
-                    if motion_pixels > self.motion_threshold:
-                        motion_detected = True
-                        #logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
-
 
                 prev_gray = gray  # Update previous frame
                 now = time.time()
