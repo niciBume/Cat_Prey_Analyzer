@@ -54,13 +54,13 @@ description="""\
 Cat Prey Analyzer - Smart Cat Flap Monitor
 
 This tool uses camera input and machine learning to detect
-whether a cat is bringing prey and manage homeassistant catflap control.
+whether a cat is bringing prey, managing catflap control
+either through the python surepy module or through homeassistant.
 It communicates with the user and can be controlled through telegram app.
 
-Create a [hidden] .src file and 'source' it before firing cascade.py,
-containing your secrets [edit config.py].
-You can also tweak the rest of the values there for better performance.
-
+Create a [hidden] .source_env filecontaining your secrets and
+'source' it before firing cascade.py.
+You can also tweak the rest of the values in config.py for better performance.
 """,
     formatter_class=argparse.RawTextHelpFormatter
 )
