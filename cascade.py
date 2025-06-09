@@ -269,11 +269,12 @@ class Sequential_Cascade_Feeder():
         self.use_surepy = use_surepy
         self.use_ha = use_ha
         self.use_surepet = use_surepet
+        self.open_time = config.OPEN_TIME
 
-    def pause_camera_for(self, open_time: int):
+    def pause_camera(self):
         if hasattr(self, "camera"):
             with self.camera._pause_lock:
-                self.camera.pause_duration = max(0.0, float(open_time - 1))
+                self.camera.pause_duration = max(0.0, float(self.open_time - 1))
                 logging.debug(f"ℹ️  Pausing camera queue for {self.camera.pause_duration:.2f}s")
             self.camera.pause_event.set()
 
@@ -323,7 +324,7 @@ class Sequential_Cascade_Feeder():
         return False
 
     # ── Home Assistant flow ──
-    def ha_flow(self, open_time: int):
+    def ha_flow(self)
         headers = {
             "Authorization": f"Bearer {config.HA_REST_TOKEN}",
             "content-type": "application/json"
@@ -349,9 +350,9 @@ class Sequential_Cascade_Feeder():
         closed_states = {"locked_out", "locked_all"}
         if ha_state in closed_states:
             if self.try_post_with_retries(config.HA_WEBHOOK, "unlocked", "Unlock catflap"):
-                self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {open_time}s.")
-                self.pause_camera_for(open_time)
-                time.sleep(open_time)
+                self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {self.open_time}s.")
+                self.pause_camera()
+                time.sleep(self.open_time)
                 if self.try_post_with_retries(config.HA_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}]"):
                     self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{ha_state}].")
                     return True
@@ -366,7 +367,7 @@ class Sequential_Cascade_Feeder():
             return False
 
     # ── Surepy flow ──
-    async def surepy_flow(self, open_time: int):
+    async def surepy_flow(self):
         # 1. Get flap state
         with suppress_stdout_stderr():
             state = await self.get_catflap_state_surepy()
@@ -384,9 +385,9 @@ class Sequential_Cascade_Feeder():
             # Try unlocking with retries
             unlock_fn = lambda: self.set_catflap_lock_state_surepy("unlocked")
             if await self.try_surepy_with_retries(unlock_fn, "Unlock catflap via Surepy"):
-                self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking for {open_time}s.")
-                self.pause_camera_for(open_time)
-                await asyncio.sleep(open_time)
+                self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking for {self.open_time}s.")
+                self.pause_camera()
+                await asyncio.sleep(self.open_time)
                 # Restore original state with retries
                 relock_fn = lambda: self.set_catflap_lock_state_surepy(state)
                 if await self.try_surepy_with_retries(relock_fn, f"Re-lock catflap to [{state}] via Surepy"):
@@ -402,14 +403,14 @@ class Sequential_Cascade_Feeder():
             self.bot.send_text(f"⚠️  Unknown Sure Petcare catflap state: [{state}]")
             return False
 
-    def control_catflap(self, open_time: int = 30):
+    def control_catflap(self):
         if self.use_surepet != "ha" and self.use_surepy:
-            result = asyncio.run(self.surepy_flow(open_time))
+            result = asyncio.run(self.surepy_flow())
             if not result:
                 logging.error("❌ Using surepy to unlock catflap failed!")
             return True
         elif self.use_ha:
-            result = self.ha_flow(open_time)
+            result = self.ha_flow()
             if not result:
                 logging.error("❌ Using HA to unlock catflap failed!")
             return True
@@ -623,7 +624,7 @@ class Sequential_Cascade_Feeder():
             # Check if user force opens the door
             if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
                 if use_surepet:
-                    self.control_catflap(open_time=20)
+                    self.control_catflap()
                 else:
                     self.bot.send_text("ℹ️  No backend available to open the catflap.")
                     logging.info("ℹ️  No backend available to open the catflap.")
