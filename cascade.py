@@ -99,9 +99,7 @@ parser.add_argument(
 args = parser.parse_args()
 if args.camera_url:
     CAMERA_URL = args.camera_url
-if args.backend:
-    BACKEND = args.backend
-else: BACKEND = None
+BACKEND = args.backend if args.backend else None
 
 # Create a RotatingFileHandler
 log_handler = RotatingFileHandler(
@@ -203,7 +201,7 @@ if BACKEND == "surepy" and use_surepy:
 if BACKEND == "ha" and use_ha:
     logging.info("ℹ️  Using HA webhook for un/locking.")
     use_surepet = "ha"
-if BACKEND == None:
+if BACKEND is None:
     use_surepet = use_surepy or use_ha
 logging.debug(f"use_surepet={use_surepet}")
 

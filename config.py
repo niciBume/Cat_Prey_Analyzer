@@ -127,12 +127,10 @@ if DEFAULT_FPS_OFFSET < 0:
     raise ValueError("DEFAULT_FPS_OFFSET must be non-negative")
 
 # Set motion threshold between frames in which queuing should happen
+# How to tune it:
+# - Lower values (~1000–3000) → More sensitive (even small changes cause enqueues).
+# - Higher values (~7000–15000) → Less sensitive (only large movements are captured).
 MOTION_THRESHOLD = 5000
-"""
-    How to tune it
-    Lower values (~1000–3000) → More sensitive (even small changes cause enqueues).
-    Higher values (~7000–15000) → Less sensitive (only large movements are captured).
-"""
 
 # Logging setup
 LOG_FILENAME = 'log/CatPreyAnalyzer.log'
