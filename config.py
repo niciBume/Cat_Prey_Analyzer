@@ -22,7 +22,11 @@ Cat Prey Analyzer - Configuration Logic Summary
   The used values are a safe starting point, tune to your own liking (depending on your hardware).
 """
 
-import os, pytz, locale
+import os, locale
+try:
+    import pytz
+except ImportError:
+    raise ImportError("pytz module is required. Install with: pip install pytz")
 
 def detect_system_timezone():
     """Try to detect system timezone from /etc/timezone or /etc/localtime."""
