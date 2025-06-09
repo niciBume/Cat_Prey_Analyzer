@@ -73,14 +73,22 @@ if TIMEZONE == "UTC":
     You should set a proper timezone in config.py (e.g. 'Europe/Berlin'),
     or set/check for the correct system timezone. Please use a canonical TZ identifier from:
     https://en.wikipedia.org/wiki/List_of_tz_database_time_zones""")
+# Or set timezone manually in following step
 
 ### START EDITABLE VARS ###
 
-# Or set timezone manually
 #TIMEZONE = "Europe/Berlin"
 
 # set locale
-locale.setlocale(locale.LC_TIME, 'de_DE.UTF-8')
+try:
+    locale.setlocale(locale.LC_TIME, 'de_DE.UTF-8')
+except locale.Error:
+    # Fall back to system default or C locale
+    try:
+        locale.setlocale(locale.LC_TIME, '')
+    except locale.Error:
+        locale.setlocale(locale.LC_TIME, 'C')
+    print("⚠️  Warning: de_DE.UTF-8 locale not available, using system default")
 
 # Set to True if this is a dedicated machine for this purpose
 IS_DEDICATED = False
