@@ -18,56 +18,37 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 - Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
 - Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as in [this](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
-- Now create an env file (I called mine .source_env) to save all your secrets to, then source it before starting `cascade.py`.
-
-  The file should contain something like this:
-
-  ```
-  # Chat ID and Bot Token according to Telegram API
-  export TELEGRAM_CHAT_ID="XXXXXXXXXX"
-  export TELEGRAM_BOT_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-
-  # Webhook for home assistant
-  export HA_WEBHOOK="http://192.168.1.24:8123/api/webhook/_-UnlockLockCatFlapNow-_"
-
-  # URL and TOKEN for homeassistant REST API
-  export HA_REST_URL="http://192.168.1.24:8123/api/states/sensor.cat_flap_sureflap"
-  export HA_REST_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-
-  # Token and device ID for surepy
-  export SUREPY_DEVICE_ID="XXXXXXXXXX"
-  export SUREPY_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX or `cat ~/.surepy.token`"
-  export SUREPY_EMAIL="XXXXXXXXXX"
-  export SUREPY_PASSWORD="XXXXXXXXXX"
-  ```
+- Now create an env file (I called mine .source_env, you can copy the template and change the values) to save all your secrets to, then source it before starting `cascade.py`.
 
 - Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###` to your liking, then start `cascade.py` like this:
-  ```
+  ```bash
   $ source .source_env; python3 cascade.py rtsp://192.168.1.1//unicast --log debug
   ```
 
-  By following all these steps, you should now be greated by your Telegram Bot at startup:
+By following all these steps, you should now be greated by your Telegram Bot at startup:
 
-  <img src="/readme_images/bot_good_morning.png" width="400">
+<img src="/readme_images/bot_good_morning.png" width="400">
 
-  The system is now running and you can check out the bot commands via ```/help```. Be aware that you need patience at startup, as the models take up to 5 min to be completely loaded, as they are very large.
+The system is now running and you can check out the bot commands via ```/help```. Be aware that you need patience at startup, as the models take up to 5 min to be completely loaded, as they are very large.
+
+# Catflap un/locking backends
+For these two following steps you need to get your Sure Petcare's <catflap ID> by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note the ID from the URL you see in your browser, it'll look something like this: "https://surepetcare.io/device/12345678/details".
 
 # Configuring Surepy
-For these two following steps you need to get your Sure Petcare 'catflap ID' by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note the ID from the URL you see in your browser, it'll look something like this: "https://surepetcare.io/device/12345678/details".
-
-To use the surepy python module directly to control the SurePetcare API, you need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), then set your catflap ID and credentials (either email AND password, or just the surepy token) in the '.source_env' file.
+You need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), then set your catflap ID and credentials (either email AND password, the surepy token, or both) in the '.source_env' file.
 
 # Configuring Home Assistant
 You need two URLs for controlling the catflap through homeassistant, a REST API URL for getting the current catflap locking status and a WEBHOOK URL for controlling it.
 
 For the REST API you need to generate a token like shown in [this article](https://developers.home-assistant.io/docs/api/rest/).
 
-Put your URL and access token (without the 'Bearer ' part) into the '.source_env' file. The URL will look something like this (replace 'sensor.cat_flap_xxx' with the actual name of your sensor in hassio):
+Put your URL and access token (without the 'Bearer ' part) into your '.source_env' file. The URL will look something like this (replace 'sensor.cat_flap' with the actual name of your sensor in hassio), for example:
+```url
+http://192.168.1.24:8123/api/states/sensor.cat_flap`
 ```
-http://192.168.1.24:8123/api/states/sensor.cat_flap_xxx
-```
+
 The webhook triggered automation for controlling the catflap looks like this:
-```
+```yaml
 alias: CatPreyAnalyser Lock/Unlock
 description: "Webhook for controlling the catflap from CatPreyAnalyzer"
 triggers:
@@ -83,11 +64,13 @@ actions:
     action: sureha.set_lock_state
 ```
 
-There is a new addition, you can now specify a backend for un/locking the catflap, so if you configured both in .source_env, you can still select the one you want to use. It's an optional command line attribute -b/--backend, which can be either 'surepy' or 'ha'.
+- New addition: optional command line attribute -b or --backend, which can be either 'surepy' or 'ha'.
+
+You can now specify a preferred backend for un/locking the catflap, so if you configured both in .source_env, you can select the one you want to use. If the chosen backend doesn't work tho, there's no fall back to using the other one, just an error will be shown.
 
 Here's a full help menue of the main script cascade.py:
 
-```
+```text
 $ python3 cascade.py -h
 usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA_URL] [-b {surepy,ha}]
 
