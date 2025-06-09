@@ -381,13 +381,15 @@ class Sequential_Cascade_Feeder():
         closed_states = {"locked_out", "locked_all"}
         if state in closed_states:
             # Try unlocking with retries
-            unlock_fn = lambda: self.set_catflap_lock_state_surepy("unlocked")
+            async def unlock_fn():
+                return await self.set_catflap_lock_state_surepy("unlocked")
             if await self.try_surepy_with_retries(unlock_fn, "Unlock catflap via Surepy"):
                 self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking for {self.open_time}s.")
                 self.pause_camera()
                 await asyncio.sleep(self.open_time)
                 # Restore original state with retries
-                relock_fn = lambda: self.set_catflap_lock_state_surepy(state)
+                async def relock_fn():
+                    return await self.set_catflap_lock_state_surepy(state)
                 if await self.try_surepy_with_retries(relock_fn, f"Re-lock catflap to [{state}] via Surepy"):
                     self.bot.send_text(f"ℹ️  Catflap is back to previous state: [{state}].")
                     return True   # <-- ADD THIS for successful sequence
@@ -419,8 +421,8 @@ class Sequential_Cascade_Feeder():
         if self.surepy_client is None:
             logging.debug("🔐 Initializing Surepy client…")
             self.surepy_client = Surepy(
-                #email=config.SUREPY_EMAIL, #  You should use auth_token instead if you have an API token.
-                #password=config.SUREPY_PASSWORD, #  You should use auth_token instead if you have an API token.
+                email=config.SUREPY_EMAIL if not (hasattr(config, 'SUREPY_TOKEN') and config.SUREPY_TOKEN) else None,
+                password=config.SUREPY_PASSWORD if not (hasattr(config, 'SUREPY_TOKEN') and config.SUREPY_TOKEN) else None,
                 auth_token=config.SUREPY_TOKEN if hasattr(config, 'SUREPY_TOKEN') and config.SUREPY_TOKEN else None
             )
             logging.debug("ℹ️  Done initializing Surepy client…")
