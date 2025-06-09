@@ -31,7 +31,6 @@ import cv2
 import time
 import logging
 import gc
-import sys
 import config
 from threading import Event, Lock
 
