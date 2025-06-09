@@ -1,15 +1,14 @@
-# Insert Chat ID and Bot Token according to Telegram API
-export TELEGRAM_CHAT_ID="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-export TELEGRAM_BOT_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+# Chat ID and Bot Token according to Telegram API
+export TELEGRAM_CHAT_ID="your_chat_id_here"
+export TELEGRAM_BOT_TOKEN="your_bot_token_here"
 
-# Insert webhooks for home assistant (use more hard-to-guess names for your webhooks)
-export HA_WEBHOOK="http://192.168.1.24:8123/api/webhook/LockUnlockCatFlapNow"
+# Webhooks and token for home assistant (use more hard-to-guess names for your webhooks)
+export HA_WEBHOOK="http://<home-assistant-host>:8123/api/webhook/your_webhook_name"
+export HA_REST_URL="http://<home-assistant-host>:8123/api/states/your_sensor"
+export HA_REST_TOKEN="your_long_lived_access_token_here"
 
-# TOKEN for HA REST
-export HA_REST_URL="http://192.168.1.24:8123/api/states/sensor.cat_flap_sureflap"
-export HA_REST_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX" # create this in HA first
-
-export SUREPY_DEVICE_ID="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-export SUREPY_EMAIL="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-export SUREPY_PASSWORD="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
-export SUREPY_TOKEN="XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX or `cat ~/.surepy.token`"
+# Surepet credentials and/or token here
+export SUREPY_DEVICE_ID="your_device_id_here"
+export SUREPY_EMAIL="your_email_here"
+export SUREPY_PASSWORD="your_password_here"
+export SUREPY_TOKEN="your_surepy_token_here"
