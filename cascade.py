@@ -1,5 +1,52 @@
+# cascade.py
+
+"""
+Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
+
+- Core Controller:
+  - Orchestrates camera acquisition, frame analysis, event detection, and bot/user integration.
+  - Manages the main queue handler, which processes frames as they become available from the camera queue.
+  - Runs detection algorithms (e.g., prey detection, cat recognition) and triggers corresponding actions or notifications.
+
+- Bot Integration:
+  - Handles Telegram (or other) bot commands, such as `/sendlivepic`, status queries, and user-initiated actions.
+  - Pulls latest frames from the main queue for live image requests, ensuring frames are always recent due to camera_class logic.
+
+- Catflap & Peripheral Control:
+  - Integrates with Sure Petcare (Surepy) and/or Home Assistant for smart catflap control.
+  - Pauses/resumes camera queue and manages lock state during catflap operations.
+
+- Startup & Fault Tolerance:
+  - Initializes all components, launches threads for camera and bot.
+  - Monitors and recovers from errors in camera or analysis loops.
+
+- Logging:
+  - Provides info, warning, and error logs for all major operations.
+  - Reports status to the bot for user transparency.
+
+- This file is the main entry point and nervous system of the analyzer, connecting all subsystems and user interfaces.
+"""
+
+import config
+import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio
 import logging
-import argparse
+from logging.handlers import RotatingFileHandler
+import numpy as np
+from pathlib import Path
+from datetime import datetime
+from collections import deque
+from threading import Event, Lock, Thread
+from multiprocessing import Process
+from telegram.ext import Updater, CommandHandler
+import xml.etree.ElementTree as ET
+from io import BytesIO
+from typing import Optional, List
+from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
+from camera_class import Camera
+from surepy import Surepy
+from surepy.enums import LockState
+from surepy.entities.devices import Flap
+from contextlib import contextmanager
 
 # Set up argument parser
 parser = argparse.ArgumentParser(
@@ -7,140 +54,193 @@ description="""\
 Cat Prey Analyzer - Smart Cat Flap Monitor
 
 This tool uses camera input and machine learning to detect
-whether a cat is bringing prey and manage flap control.
+whether a cat is bringing prey, managing catflap control
+either through the python surepy module or through homeassistant.
+It communicates with the user and can be controlled through telegram app.
 
---with-XXX - Select camera source mode (default=none: use Picamera2)
---log - select log level (default=INFO)
+Create a [hidden] .source_env filecontaining your secrets and
+'source' it before firing cascade.py.
+You can also tweak the rest of the values in config.py for better performance.
 """,
     formatter_class=argparse.RawTextHelpFormatter
 )
 
-parser.add_argument("--with-rtsp", action="store_true", help="Use RTSP camera stream")
-parser.add_argument("--with-mjpeg", action="store_true", help="Use MJPEG camera stream")
-parser.add_argument("--log", default="INFO", help="Set the logging level (e.g., DEBUG, INFO, WARNING, ERROR, CRITICAL)")
+CAMERA_URL = None
+parser.add_argument(
+        '-l', '--log',
+        type=str,
+        choices=['info', 'warning', 'error', 'critical', 'debug'],
+        default='INFO',
+        help="Set the logging level",
+        )
+parser.add_argument(
+        '-c', '--camera-url',
+        type=str,
+        help="""Set camera input source:
+          - libcamera (DEFAULT fallback, if parameter not set)
+          - MJPEG stream (http://...)
+          - RTSP stream (rtsp://...)
+          - USB webcam (CAMERA_URL is digit)
+          - Video file (if URL is a file, ending in avi/mp4)
+        """,
+        )
+parser.add_argument(
+        '-b', '--backend',
+        type=str,
+        choices= ['surepy', 'ha'],
+        required=False,
+        help="""Force use of one of the following backends for catflap un/locking)
+          - surepy (use surepy module)
+          - ha (use homeassistant REST/Webhook)
+          make sure to define correct settings in the .source_env file
+        """,
+        )
 
 args = parser.parse_args()
+if args.camera_url:
+    CAMERA_URL = args.camera_url
+BACKEND = args.backend if args.backend else None
 
-loglevel = args.log.upper()  # Ensures the log level is uppercase
-
-logging.basicConfig(
-    level=getattr(logging, loglevel, logging.INFO),  # Fallback to INFO if invalid
-    format="%(asctime)s [%(levelname)s]: %(message)s",
-    #format="%(asctime)s - %(message)s",
-    filename='CatPreyAnalyzer.log',
-    filemode='w+',
-    datefmt='%m/%d/%Y-%I:%M:%S%p'
+# Create a RotatingFileHandler
+log_handler = RotatingFileHandler(
+    config.LOG_FILENAME, maxBytes=config.MAX_LOG_SIZE, backupCount=config.BACKUP_COUNT
 )
-logging.info('Starting CatPreyAnalyzer...')
 
-import numpy as np
-from pathlib import Path
-import os, cv2, time, csv, sys, gc
-import pytz
-from datetime import datetime
-from collections import deque
-from threading import Thread
-from multiprocessing import Process
-import telegram
-from telegram.ext import Updater, CommandHandler, Filters, MessageHandler
-import xml.etree.ElementTree as ET
-import urllib.request
-import config
-import contextlib
-import requests
+# Optional: compress old log files after rotation
+class GzipRotator:
+    def __call__(self, source, dest):
+        with open(source, 'rb') as f_in, gzip.open(dest + '.gz', 'wb') as f_out:
+            shutil.copyfileobj(f_in, f_out)
+        os.remove(source)
 
-sys.path.append('/home/pi/CatPreyAnalyzer')
-sys.path.append('/home/pi')
-from CatPreyAnalyzer.model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
+log_handler.rotator = GzipRotator()
+log_handler.namer = lambda name: name
 
-# Determine camera mode
-USE_PICAMERA = USE_RTSP = USE_MJPEG = False
+# Set format and log level
+formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(message)s',
+                              datefmt='%x-%X')
+log_handler.setFormatter(formatter)
 
-# Determine if using home assistant catflap control
-USE_HA = False
+# Apply to root logger
+logger = logging.getLogger()
 
-# Define required HA config attributes
-HA_REQUIRED_ATTRS = ["HA_UNLOCK_WEBHOOK", "HA_LOCK_OUT_WEBHOOK", "HA_LOCK_ALL_WEBHOOK", "HA_REST_URL"]
-# Check if all required attributes exist
-if all(hasattr(config, attr) for attr in HA_REQUIRED_ATTRS):
-    USE_HA = True
+# Parse log level dynamically from --log
+log_level_str = args.log.upper()
+log_level = getattr(logging, log_level_str, None)
+if not isinstance(log_level, int):
+    raise ValueError(f"Invalid log level: {args.log}")
+logger.setLevel(log_level)
 
-if args.with_rtsp:
-    USE_RTSP = True
-    logging.info("Using RTSP camera stream.")
-    from CatPreyAnalyzer.camera_class_rtsp import Camera
-elif args.with_mjpeg:
-    USE_MJPEG = True
-    logging.info("Using MJPEG camera stream.")
-    from CatPreyAnalyzer.camera_class_mjpeg import Camera
-else:
-    USE_PICAMERA = True
-    logging.info("Using internal PiCamera2.")
-    from CatPreyAnalyzer.camera_class import Camera
+logger.addHandler(log_handler)
 
+logging.info("\n\n   ##### Starting CatPreyAnalyzer #####   \n")
+logging.info("Configured logging.")
+logging.info(f"  Rotating log when it grows bigger than {config.MAX_LOG_SIZE/1024/1024} MB")
+
+if CAMERA_URL:
+    logging.info(f"Using following CAMERA_URL: {CAMERA_URL}")
+
+import asyncio
+
+# ── Helper to know whether to try Surepy at all ──
+def use_surepy():
+    """Return True if Surepy is configured: device ID and credentials present."""
+    # Always require device ID
+    if not hasattr(config, "SUREPY_DEVICE_ID") or getattr(config, "SUREPY_DEVICE_ID") in (None, "", 0):
+        logging.debug("⚠️  Surepy config missing or empty SUREPY_DEVICE_ID")
+        logging.info("⚠️  Surepy module NOT available!")
+        return False
+
+    # Require either token, or both email and password
+    has_token = hasattr(config, "SUREPY_TOKEN") and getattr(config, "SUREPY_TOKEN") not in (None, "", 0)
+    has_email = hasattr(config, "SUREPY_EMAIL") and getattr(config, "SUREPY_EMAIL") not in (None, "", 0)
+    has_password = hasattr(config, "SUREPY_PASSWORD") and getattr(config, "SUREPY_PASSWORD") not in (None, "", 0)
+
+    if not (has_token or (has_email and has_password)):
+        logging.debug(
+            "⚠️  Surepy not available, config requires either SUREPY_TOKEN, or both SUREPY_EMAIL and SUREPY_PASSWORD"
+        )
+        logging.info("⚠️  Surepy module NOT available!")
+        return False
+
+    logging.debug(
+        f"\n SUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}\n"
+        f" SUREPY_EMAIL={config.SUREPY_EMAIL}\n"
+        f" SUREPY_PASSWORD={config.SUREPY_PASSWORD}\n"
+        f" SUREPY_TOKEN={config.SUREPY_TOKEN}"
+    )
+    logging.info("ℹ️  Surepy module available.")
+    return True
+
+# ── Helper to know whether to try HA at all ──
+def use_ha():
+    """Return True if all HA config attributes are set (not None, empty, or zero)."""
+    has_webhook = hasattr(config, "HA_WEBHOOK") and getattr(config, "HA_WEBHOOK") not in (None, "", 0)
+    has_rest_url = hasattr(config, "HA_REST_URL") and getattr(config, "HA_REST_URL") not in (None, "", 0)
+    has_rest_token = hasattr(config, "HA_REST_TOKEN") and getattr(config, "HA_REST_TOKEN") not in (None, "", 0)
+
+    if not (has_webhook and has_rest_url and has_rest_token):
+        logging.debug("⚠️  Some HA config attributes are not set or empty.")
+        logging.info("⚠️  HA module NOT available!")
+        return False
+
+    logging.debug(
+        f"\n HA_WEBHOOK={getattr(config, 'HA_WEBHOOK', None)}"
+        f"\n HA_REST_URL={getattr(config, 'HA_REST_URL', None)}"
+        f"\n HA_REST_TOKEN={getattr(config, 'HA_REST_TOKEN', None)}"
+    )
+    logging.info("ℹ️  HA webhook available.")
+    return True
+
+use_surepy = use_surepy()
+use_ha = use_ha()
+use_surepet = False
+if BACKEND == "surepy" and use_surepy:
+    logging.info("ℹ️  Using surepy module for un/locking.")
+    use_surepet = "surepy"
+if BACKEND == "ha" and use_ha:
+    logging.info("ℹ️  Using HA webhook for un/locking.")
+    use_surepet = "ha"
+if BACKEND is None:
+    use_surepet = use_surepy or use_ha
+logging.debug(f"use_surepet={use_surepet}")
+
+bot_instance = None
 cat_cam_py = str(Path(os.getcwd()).parents[0])
-logging.debug('CatCamPy: %s', cat_cam_py)
+logging.debug(f"CatCamPy: {cat_cam_py}")
+logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
 
-class Spec_Event_Handler():
-    def __init__(self):
-        self.img_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/input')
-        self.out_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/output')
-
-        self.img_list = [x for x in sorted(os.listdir(self.img_dir)) if'.jpg' in x]
-        self.base_cascade = Cascade()
-
-    def log_to_csv(self, img_event_obj):
-        csv_name = img_event_obj.img_name.split('_')[0] + '_' + img_event_obj.img_name.split('_')[1] + '.csv'
-        file_exists = os.path.isfile(os.path.join(self.out_dir, csv_name))
-        with open(os.path.join(self.out_dir, csv_name), mode='a') as csv_file:
-            headers = ['Img_Name', 'CC_Cat_Bool', 'CC_Time', 'CR_Class', 'CR_Val', 'CR_Time', 'BBS_Time', 'HAAR_Time', 'FF_BBS_Bool', 'FF_BBS_Val', 'FF_BBS_Time', 'Face_Bool', 'PC_Class', 'PC_Val', 'PC_Time', 'Total_Time']
-            writer = csv.DictWriter(csv_file, delimiter=',', lineterminator='\n', fieldnames=headers)
-            if not file_exists:
-                writer.writeheader()
-
-            writer.writerow({'Img_Name':img_event_obj.img_name, 'CC_Cat_Bool':img_event_obj.cc_cat_bool,
-                             'CC_Time':img_event_obj.cc_inference_time, 'CR_Class':img_event_obj.cr_class,
-                             'CR_Val':img_event_obj.cr_val, 'CR_Time':img_event_obj.cr_inference_time,
-                             'BBS_Time':img_event_obj.bbs_inference_time,
-                             'HAAR_Time':img_event_obj.haar_inference_time, 'FF_BBS_Bool':img_event_obj.ff_bbs_bool,
-                             'FF_BBS_Val':img_event_obj.ff_bbs_val, 'FF_BBS_Time':img_event_obj.ff_bbs_inference_time,
-                             'Face_Bool':img_event_obj.face_bool,
-                             'PC_Class':img_event_obj.pc_prey_class, 'PC_Val':img_event_obj.pc_prey_val,
-                             'PC_Time':img_event_obj.pc_inference_time, 'Total_Time':img_event_obj.total_inference_time})
-
-    def debug(self):
-        event_object_list = []
-        for event_img in sorted(self.img_list):
-            event_object_list.append(Event_Element(img_name=event_img, cc_target_img=cv2.imread(os.path.join(self.img_dir, event_img))))
-
-        for event_obj in event_object_list:
-            start_time = time.time()
-            single_cascade = self.base_cascade.do_single_cascade(event_img_object=event_obj)
-            single_cascade.total_inference_time = sum(filter(None, [
-                single_cascade.cc_inference_time,
-                single_cascade.cr_inference_time,
-                single_cascade.bbs_inference_time,
-                single_cascade.haar_inference_time,
-                single_cascade.ff_bbs_inference_time,
-                single_cascade.ff_haar_inference_time,
-                single_cascade.pc_inference_time]))
-            logging.debug('Total Inference Time: %s', single_cascade.total_inference_time)
-            logging.debug('Total Runtime: %.2f seconds', time.time() - start_time)
-
-            # Write img to output dir and log csv of each event
-            cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
-            #self.log_to_csv(img_event_obj=single_cascade)
+@contextmanager
+def suppress_stdout_stderr():
+    """
+    A context manager that redirects both stdout and stderr to os.devnull.
+    This should suppress output from Python and most C/C++ libraries.
+    """
+    with open(os.devnull, 'w') as devnull:
+        old_stdout_fileno = os.dup(sys.stdout.fileno())
+        old_stderr_fileno = os.dup(sys.stderr.fileno())
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os.dup2(devnull.fileno(), sys.stdout.fileno())
+        os.dup2(devnull.fileno(), sys.stderr.fileno())
+        try:
+            yield
+        finally:
+            sys.stdout.flush()
+            sys.stderr.flush()
+            os.dup2(old_stdout_fileno, sys.stdout.fileno())
+            os.dup2(old_stderr_fileno, sys.stderr.fileno())
+            os.close(old_stdout_fileno)
+            os.close(old_stderr_fileno)
 
 class Sequential_Cascade_Feeder():
     def __init__(self):
         self.log_dir = os.path.join(os.getcwd(), 'log')
-        logging.debug('Log Dir: %s', self.log_dir)
+        logging.debug(f"Log Dir: {self.log_dir}")
         self.event_nr = 0
         self.base_cascade = Cascade()
-        self.DEFAULT_FPS_OFFSET = 2
-        self.QUEQUE_MAX_THRESHOLD = 30
-        self.fps_offset = self.DEFAULT_FPS_OFFSET
-        self.MAX_PROCESSES = 5
+        self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
+        self.MAX_PROCESSES = 7
         self.EVENT_FLAG = False
         self.event_objects = []
         self.patience_counter = 0
@@ -158,7 +258,238 @@ class Sequential_Cascade_Feeder():
         self.queues_cumuli_in_event = []
         self.bot = NodeBot()
         self.processing_pool = []
-        self.main_deque = deque()
+        self.max_queue_len = getattr(config, "MAX_QUEUE_LEN", 20)
+        self.main_deque = deque(maxlen=self.max_queue_len)
+        self.camera_url = CAMERA_URL
+        self.surepy_client: Optional[Surepy] = None
+        self.device_cache: Optional[Flap] = None
+        self.surepy_client = None
+        self.use_surepy = use_surepy
+        self.use_ha = use_ha
+        self.use_surepet = use_surepet
+        self.open_time = config.OPEN_TIME
+
+    def pause_camera(self):
+        if hasattr(self, "camera"):
+            with self.camera._pause_lock:
+                self.camera.pause_duration = max(0.0, float(self.open_time - 1))
+                logging.debug(f"ℹ️  Pausing camera queue for {self.camera.pause_duration:.2f}s")
+            self.camera.pause_event.set()
+
+    # ── Retry wrapper for async Surepy calls ──
+    async def try_surepy_with_retries(self, coro_fn, description, retries=2, delay=2):
+        """Retry async surepy state-changing calls with retries."""
+        for attempt in range(1, retries + 1):
+            try:
+                result = await coro_fn()
+                logging.debug(f"{description} (attempt {attempt}) succeeded.")
+                return result
+            except Exception as e:
+                logging.warning(f"{description} (attempt {attempt}) failed: {e}")
+                await asyncio.sleep(delay)
+        logging.error(f"{description} failed after {retries} attempts.")
+        return False
+
+    # ── HTTP GET with retries (for HA fallback) ──
+    def try_get_with_retries(self, url, headers, description="", retries=2, timeout=2):
+        for attempt in range(1, retries + 1):
+            try:
+                resp = requests.get(url, headers=headers, timeout=timeout)
+                resp.raise_for_status()
+                logging.debug(f"{description} (attempt {attempt}) succeeded.")
+                return resp
+            except requests.RequestException as e:
+                logging.warning(f"{description} (attempt {attempt}) failed: {e}")
+                time.sleep(1)
+        logging.error(f"{description} failed after {retries} attempts.")
+        return None
+
+    # ── HTTP POST with retries (for HA fallback) ──
+    def try_post_with_retries(self, url, ha_state, description, retries=2, timeout=2):
+        for attempt in range(1, retries + 1):
+            try:
+                payload = {"ha_state": ha_state}
+                headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
+                resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
+                if 200 <= resp.status_code < 300:
+                    logging.debug(f"ℹ️  {description} (attempt {attempt}) succeeded.")
+                    return True
+                logging.warning(f"{description} (attempt {attempt}) failed with status {resp.status_code}.")
+            except requests.RequestException as e:
+                logging.warning(f"{description} (attempt {attempt}) failed: {e}")
+            time.sleep(1)
+        logging.error(f"{description} failed after {retries} attempts.")
+        return False
+
+    # ── Home Assistant flow ──
+    def ha_flow(self):
+        headers = {
+            "Authorization": f"Bearer {config.HA_REST_TOKEN}",
+            "content-type": "application/json"
+        }
+        response = self.try_get_with_retries(config.HA_REST_URL, headers, "Query HA catflap state")
+        if not response:
+            self.bot.send_text("❌ Could not query HA catflap state – aborting.")
+            return False
+
+        try:
+            ha_state = response.json().get("state")
+            if not ha_state:
+                raise ValueError("⚠️  No 'state' in HA response JSON")
+        except Exception as e:
+            self.bot.send_text(f"❌ Failed to decode HA state: {e}")
+            return False
+
+        open_states = {"unlocked", "locked_in"}
+        if ha_state in open_states:
+            self.bot.send_text(f"ℹ️  Catflap already open inwards: [{ha_state}]")
+            return True  # Nothing to do, treat as success
+
+        closed_states = {"locked_out", "locked_all"}
+        if ha_state in closed_states:
+            if self.try_post_with_retries(config.HA_WEBHOOK, "unlocked", "Unlock catflap"):
+                self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {self.open_time}s.")
+                self.pause_camera()
+                time.sleep(self.open_time)
+                if self.try_post_with_retries(config.HA_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}]"):
+                    self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{ha_state}].")
+                    return True
+                else:
+                    self.bot.send_text("❌ Error re-locking HA catflap.")
+                    return False
+            else:
+                self.bot.send_text("❌ Failed to unlock HA catflap.")
+                return False
+        else:
+            self.bot.send_text(f"⚠️  Catflap HA state [{ha_state}] is not one of locked_out or locked_all")
+            return False
+
+    # ── Surepy flow ──
+    async def surepy_flow(self):
+        # 1. Get flap state
+        with suppress_stdout_stderr():
+            state = await self.get_catflap_state_surepy()
+        if state is None:
+            self.bot.send_text("❌ Could not get state from Sure Petcare.")
+            return False  # Explicit failure
+
+        open_states = {"unlocked", "locked_in"}
+        if state in open_states:
+            self.bot.send_text(f"ℹ️  Catflap already open inwards: [{state}]")
+            return True  # Consider this a success, nothing to do
+
+        closed_states = {"locked_out", "locked_all"}
+        if state in closed_states:
+            # Try unlocking with retries
+            async def unlock_fn():
+                return await self.set_catflap_lock_state_surepy("unlocked")
+            if await self.try_surepy_with_retries(unlock_fn, "Unlock catflap via Surepy"):
+                self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking for {self.open_time}s.")
+                self.pause_camera()
+                await asyncio.sleep(self.open_time)
+                # Restore original state with retries
+                async def relock_fn():
+                    return await self.set_catflap_lock_state_surepy(state)
+                if await self.try_surepy_with_retries(relock_fn, f"Re-lock catflap to [{state}] via Surepy"):
+                    self.bot.send_text(f"ℹ️  Catflap is back to previous state: [{state}].")
+                    return True   # <-- ADD THIS for successful sequence
+                else:
+                    self.bot.send_text("❌ Error re-locking catflap via Sure Petcare.")
+                    return False
+            else:
+                self.bot.send_text("❌ Failed to unlock catflap via Sure Petcare.")
+                return False
+        else:
+            self.bot.send_text(f"⚠️  Unknown Sure Petcare catflap state: [{state}]")
+            return False
+
+    def control_catflap(self):
+        if self.use_surepet != "ha" and self.use_surepy:
+            result = asyncio.run(self.surepy_flow())
+            if not result:
+                logging.error("❌ Using surepy to unlock catflap failed!")
+            return result
+        elif self.use_ha:
+            result = self.ha_flow()
+            if not result:
+                logging.error("❌ Using HA to unlock catflap failed!")
+            return result
+        return False
+
+    # ── Lazy-initialize a Surepy client ──
+    def get_surepy_client(self) -> Surepy:
+        if self.surepy_client is None:
+            logging.debug("🔐 Initializing Surepy client…")
+            self.surepy_client = Surepy(
+                email=config.SUREPY_EMAIL if not (hasattr(config, 'SUREPY_TOKEN') and config.SUREPY_TOKEN) else None,
+                password=config.SUREPY_PASSWORD if not (hasattr(config, 'SUREPY_TOKEN') and config.SUREPY_TOKEN) else None,
+                auth_token=config.SUREPY_TOKEN if hasattr(config, 'SUREPY_TOKEN') and config.SUREPY_TOKEN else None
+            )
+            logging.debug("ℹ️  Done initializing Surepy client…")
+        return self.surepy_client
+
+    # ── Fetch (and cache) the Flap device object ──
+    async def _fetch_device(self) -> Optional[Flap]:
+        try:
+            client = self.get_surepy_client()
+            devices: List = await client.get_devices()
+            target_id = str(config.SUREPY_DEVICE_ID)
+            device = next((d for d in devices if str(d.id) == target_id), None)
+
+            if device is None:
+                logging.error(f"❌ Device ID {config.SUREPY_DEVICE_ID} not found among Surepy devices.")
+                return None
+
+            self.device_cache = device
+            return device
+
+        except Exception as e:
+            logging.error(f"❌ Error fetching device from Surepy: {e}")
+            return None
+
+    # ── Ask Surepy for the current lock‐state string (“lock_out”, etc.) ──
+    async def get_catflap_state_surepy(self) -> Optional[str]:
+        try:
+            device = await self._fetch_device()
+            if device is None:
+                logging.error(f"❌ No Surepy device available to read lock state. SUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}")
+                return None
+            self.mode = str(device.state).lower()
+            logging.info(f"🐾 Surepy catflap_state = {self.mode}")
+            return self.mode
+
+        except Exception as e:
+            logging.error(f"❌ Surepy error while getting state: {e}")
+            return None
+
+    # ── Tell Surepy to change the lock state of the flap ──
+    async def set_catflap_lock_state_surepy(self, state: str) -> bool:
+        try:
+            client = self.get_surepy_client()
+            device = await self._fetch_device()
+            if device is None:
+                logging.error("❌ Could not fetch catflap device.")
+                return False
+
+            lock_states = {
+                "unlocked": client.sac.unlock,
+                "locked_in": client.sac.lock_in,
+                "locked_out": client.sac.lock_out,
+                "locked_all": client.sac.lock,
+            }
+
+            state = state.lower()
+            if state not in lock_states:
+                logging.error(f"❌ Unknown lock state \"{state}\"")
+                return False
+
+            await lock_states[state](config.SUREPY_DEVICE_ID)
+            logging.info(f"ℹ️  Set lock state to \"{state}\" via surepy.sac")
+            return True
+
+        except Exception as e:
+            logging.error(f"❌ Surepy error setting lock state [{state}]: {e}")
+            return False
 
     def reset_cumuli_et_al(self):
         self.EVENT_FLAG = False
@@ -166,7 +497,6 @@ class Sequential_Cascade_Feeder():
         self.PATIENCE_FLAG = False
         self.FACE_FOUND_FLAG = False
         self.cumulus_points = 0
-        self.fps_offset = self.DEFAULT_FPS_OFFSET
         self.event_reset_counter = 0
         self.face_counter = 0
         self.PREY_FLAG = None
@@ -182,10 +512,10 @@ class Sequential_Cascade_Feeder():
 
         #terminate processes when pool too large
         if len(self.processing_pool) >= self.MAX_PROCESSES:
-            logging.debug('terminating oldest processes Len: %d', len(self.processing_pool))
+            logging.debug(f"terminating oldest processes Len: {len(self.processing_pool)}")
             for p in self.processing_pool[0:int(len(self.processing_pool)/2)]:
                 p.terminate()
-            logging.debug('Now processes Len: %d', len(self.processing_pool))
+            logging.debug(f"Now processes Len: {len(self.processing_pool)}")
 
     def log_event_to_csv(self, event_obj, queues_cumuli_in_event, event_nr):
         csv_name = 'event_log.csv'
@@ -216,12 +546,12 @@ class Sequential_Cascade_Feeder():
         event_str = ''
         face_events = [x for x in event_objects if x.face_bool]
         for f_event in face_events:
-            logging.debug('Img_Name: %s', f_event.img_name)
-            logging.debug('PC_Val: %.2f', f_event.pc_prey_val)
+            logging.debug(f"Img_Name: {f_event.img_name}")
+            logging.debug(f"PC_Val: {f_event.pc_prey_val:.2f}")
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
         sender_img = event_objects[max_prey_index].output_img
-        caption = 'Cumuli: ' + str(cumuli) + ' => PREY IN DA HOUSE!' + ' 🐁🐁🐁' + event_str
+        caption = 'Cumuli: ' + str(cumuli) + ' => PREY IN DA HOUSE!' + ' ⚠️  🐁' + event_str
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -232,12 +562,12 @@ class Sequential_Cascade_Feeder():
         event_str = ''
         face_events = [x for x in event_objects if x.face_bool]
         for f_event in face_events:
-            logging.debug('Img_Name: %s', f_event.img_name)
-            logging.debug('PC_Val: %.2f', f_event.pc_prey_val)
+            logging.debug(f"Img_Name: {f_event.img_name}")
+            logging.debug(f"PC_Val: {f_event.pc_prey_val:.2f}")
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
         sender_img = event_objects[min_prey_index].output_img
-        caption = 'Cumuli: ' + str(cumuli) + ' => No prey, cat is clean...' + ' 🐱' + event_str
+        caption = 'Cumuli: ' + str(cumuli) + ' => No prey, cat is clean...' + ' ✅️ 🐱' + event_str
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -245,12 +575,20 @@ class Sequential_Cascade_Feeder():
         event_str = ''
         face_events = [x for x in event_objects if x.face_bool]
         for f_event in face_events:
-            logging.debug('Img_Name: %s', f_event.img_name)
-            logging.debug('PC_Val: %.2f', f_event.pc_prey_val)
+            logging.debug(f"Img_Name: {f_event.img_name}")
+            logging.debug(f"PC_Val: {f_event.pc_prey_val:.2f}")
             event_str += '\n' + f_event.img_name + ' => PC_Val: ' + str('%.2f' % f_event.pc_prey_val)
 
-        sender_img = face_events[0].output_img
-        caption = 'Cumuli: ' + str(cumuli) + ' => Cant say for sure...' + ' 🤷‍♀️' + event_str + '\nMaybe use /letin?'
+        if face_events:
+            sender_img = face_events[0].output_img
+        elif event_objects:
+            sender_img = event_objects[0].output_img
+            logging.warning("No face events; falling back to first event_object image in send_dk_message.")
+        else:
+            logging.warning("No images to send in send_dk_message")
+            return
+
+        caption = 'Cumuli: ' + str(cumuli) + '❔️ => Cant say for sure...' + ' 🤷' + event_str + '\nMaybe use /letin?'
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -263,26 +601,64 @@ class Sequential_Cascade_Feeder():
 
         return imgNr
 
-    def queque_worker(self):
-        logging.debug("Working the Queque with len: %d", len(self.main_deque))
+    def queue_handler(self):
+        # Do this to force run all networks s.t. the network inference time stabilizes
+        self.single_debug()
+
+        # Pass self.main_deque to the camera
+        self.camera = Camera(self.main_deque, self.camera_url)
+
+        # Start the camera fill loop
+        camera_thread = Thread(target=self.camera.fill_queue, daemon=True)
+        camera_thread.start()
+        self.bot.send_text("ℹ️  Starting camera loop")
+
+        while True:
+            if len(self.main_deque) > self.fps_offset:
+                logging.debug(f"Deque type: {type(self.main_deque)} | Length: {len(self.main_deque)}")
+                self.queue_worker()
+            else:
+                #logging.debug(f"Nothing to work with => Queue_length: {len(self.main_deque)}")
+                time.sleep(0.15)
+
+            # Check if user force opens the door
+            if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
+                if use_surepet:
+                    self.control_catflap()
+                else:
+                    self.bot.send_text("ℹ️  No backend available to open the catflap.")
+                    logging.info("ℹ️  No backend available to open the catflap.")
+
+            self.reset_cumuli_et_al()
+
+    def queue_worker(self):
+        logging.debug(f"Working the Queue with len: {len(self.main_deque)}")
         start_time = time.time()
-        #Feed the latest image in the Queue through the cascade
-        cascade_obj = self.feed(target_img=self.main_deque[self.fps_offset][1], img_name=self.main_deque[self.fps_offset][0])[1]
-        logging.debug('Runtime: %.2f seconds', time.time() - start_time)
-        done_timestamp = datetime.now(pytz.timezone('Europe/Zurich')).strftime("%Y_%m_%d_%H-%M-%S.%f")
-        logging.debug('Timestamp at Done Runtime: %s', done_timestamp)
 
-        overhead = datetime.strptime(done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(self.main_deque[self.fps_offset][0], "%Y_%m_%d_%H-%M-%S.%f")
-        logging.debug('Overhead: %.2f seconds', overhead.total_seconds())
+        # Ensure we have enough elements before accessing
+        if len(self.main_deque) <= self.fps_offset:
+            logging.warning("Not enough elements in deque for processing")
+            return
 
-        #Add this such that the bot has some info
+        # Feed the latest image in the Queue through the cascade
+        timestamp, frame = self.main_deque[self.fps_offset]
+        cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
+        logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
+        done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
+        logging.debug(f"Timestamp at Done Runtime: {done_timestamp}")
+
+        overhead = datetime.strptime(done_timestamp, "%c.%f") - datetime.strptime(timestamp, "%c.%f")
+        logging.debug(f"Overhead: {overhead.total_seconds():.2f} seconds")
+
+        # Add this such that the bot has some info
         self.bot.node_queue_info = len(self.main_deque)
-        self.bot.node_live_img = self.main_deque[self.fps_offset][1]
+        self.bot.node_live_img = frame
         self.bot.node_over_head_info = overhead.total_seconds()
 
         # Always delete the left part
-        for i in range(self.fps_offset + 1):
-            self.main_deque.popleft()
+        for _ in range(self.fps_offset + 1):
+            if self.main_deque:
+                self.main_deque.popleft()
 
         if cascade_obj.cc_cat_bool == True:
             #We are inside an event => add event_obj to list
@@ -300,26 +676,23 @@ class Sequential_Cascade_Feeder():
                 self.cumulus_points += (50 - int(round(100 * cascade_obj.pc_prey_val)))
                 self.FACE_FOUND_FLAG = True
 
-            logging.debug('CUMULUS: %d', self.cumulus_points)
+            logging.debug(f"CUMULUS: {self.cumulus_points}")
             self.queues_cumuli_in_event.append((len(self.main_deque),self.cumulus_points, done_timestamp))
 
             #Check the cumuli points and set flags if necessary
             if self.face_counter > 0 and self.PATIENCE_FLAG:
                 if self.cumulus_points / self.face_counter > self.cumulus_no_prey_threshold:
                     self.NO_PREY_FLAG = True
-                    logging.info('NO PREY DETECTED... YOU CLEAN...')
+                    logging.info("🐱 NO PREY DETECTED... YOU CLEAN...")
                     p = Process(target=self.send_no_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
                     self.processing_pool.append(p)
                     #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
-                    if USE_HA:
-                        logging.info('Cat is clean, unlocking the catflap temporarily')
-                        self.bot.send_text(message='Cat is clean, unlocking the catflap temporarily')
-                        self.open_catflap(open_time = 50)
+                    self.bot.send_text("😸️ Cat is clean, unlocking the catflap temporarily")
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
-                    logging.info('IT IS A PREY!!!!!')
+                    logging.info("🐁 CAT HAS A PREY!!!!!")
                     p = Process(target=self.send_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
                     self.processing_pool.append(p)
@@ -334,12 +707,12 @@ class Sequential_Cascade_Feeder():
 
         #No cat detected => reset event_counters if necessary
         else:
-            logging.debug('NO CAT FOUND!')
+            logging.debug("NO CAT FOUND!")
             self.event_reset_counter += 1
             if self.event_reset_counter >= self.event_reset_threshold:
-                # If was True => event now over => clear queque
+                # If was True => event now over => clear queue
                 if self.EVENT_FLAG:
-                    logging.debug('CLEARED QUEQUE BECAUSE EVENT OVER WITHOUT CONCLUSION...')
+                    logging.debug("CLEARED QUEQUE BECAUSE EVENT OVER WITHOUT CONCLUSION...")
                     #TODO QUICK FIX
                     if self.face_counter == 0:
                         self.face_counter = 1
@@ -351,105 +724,16 @@ class Sequential_Cascade_Feeder():
 
         if self.EVENT_FLAG and self.FACE_FOUND_FLAG:
             self.patience_counter += 1
-        if self.patience_counter > 2:
-            self.PATIENCE_FLAG = True
-        if self.face_counter > 1:
+        if self.patience_counter > 2 or self.face_counter > 1:
             self.PATIENCE_FLAG = True
 
     def single_debug(self):
         start_time = time.time()
-        target_img_name = 'dummy_img.jpg'
-        target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
+        target_img_name = "dummy_img.jpg"
+        target_img = cv2.imread(os.path.join(cat_cam_py, "CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg"))
         cascade_obj = self.feed(target_img=target_img, img_name=target_img_name)[1]
-        logging.debug('Runtime: %.2f seconds', time.time() - start_time)
+        logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
         return cascade_obj
-
-    def open_catflap(self, open_time):
-        # check current catflap state
-        headers = {
-            "Authorization": f"Bearer {config.HA_REST_TOKEN}",
-            "content-type": "application/json"
-        }
-        #response = get(config.HA_REST_URL, headers=headers)
-        #data = response.json()
-        try:
-            response = requests.get(config.HA_REST_URL, headers=headers, timeout=5)
-            response.raise_for_status()
-            data = response.json()
-        except (requests.RequestException, ValueError) as exc:
-            logging.error("Could not query catflap state: %s", exc)
-            self.bot.send_text("⚠️  Could not query catflap state – aborting unlock.")
-            return
-        catflap_state = data["state"]
-        logging.info(' #### catflap_state = %s', catflap_state)
-
-        # unlock catflap
-        if catflap_state == "locked_out" or catflap_state == "locked_all":
-            req = urllib.request.Request(
-                url = config.HA_UNLOCK_WEBHOOK,
-                method = "POST"
-            )
-            #with urllib.request.urlopen(req) as response:
-            #    contents = response.read()
-            # Fire-and-forget: no need to keep the body in memory
-            with contextlib.closing(urllib.request.urlopen(req)):
-                pass
-            self.bot.send_text('Catflap is [' + catflap_state + '], unlocking for ' + str(open_time) + ' seconds.')
-            time.sleep(open_time)
-
-            if catflap_state == "locked_out":
-                req = urllib.request.Request(
-                    url = config.HA_LOCK_OUT_WEBHOOK,
-                    method = "POST"
-                )
-                #with urllib.request.urlopen(req) as response:
-                #    contents = response.read()
-                with contextlib.closing(urllib.request.urlopen(req)):
-                    pass
-                self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
-            if catflap_state == "locked_all":
-                req = urllib.request.Request(
-                    url = config.HA_LOCK_ALL_WEBHOOK,
-                    method = "POST"
-                )
-                #with urllib.request.urlopen(req) as response:
-                #    contents = response.read()
-                with contextlib.closing(urllib.request.urlopen(req)):
-                    pass
-                self.bot.send_text('Catflap is back to previous state: [' + catflap_state + '].')
-        else:
-            self.bot.send_text('Catflap does not need unlocking, already set to: [' + catflap_state + '].')
-
-    def queque_handler(self):
-        # Do this to force run all networks s.t. the network inference time stabilizes
-        self.single_debug()
-
-        camera = Camera()
-        camera_thread = Thread(target=camera.fill_queue, args=(self.main_deque,), daemon=True)
-        camera_thread.start()
-
-        while(True):
-            if len(self.main_deque) > self.QUEQUE_MAX_THRESHOLD:
-                self.main_deque.clear()
-                self.reset_cumuli_et_al()
-                # Clean up garbage
-                gc.collect()
-                logging.debug('DELETING QUEQUE BECAUSE OVERLOADED!')
-                self.bot.send_text(message='Running Hot... had to kill Queque!')
-
-            elif len(self.main_deque) > self.DEFAULT_FPS_OFFSET:
-                self.queque_worker()
-            else:
-                logging.debug('Nothing to work with => Queue_length: %d', len(self.main_deque))
-                time.sleep(0.15)
-
-            #Check if user force opens the door
-            if self.bot.node_let_in_flag and USE_HA:
-                logging.info("Temporary unlocking the catflap on user's behalf.")
-                self.bot.send_text(message="Temporary unlocking the catflap on user's behalf.")
-                self.open_catflap(open_time = 30)
-                self.reset_cumuli_et_al()
-
 
     def feed(self, target_img, img_name):
         target_event_obj = Event_Element(img_name=img_name, cc_target_img=target_img)
@@ -465,7 +749,7 @@ class Sequential_Cascade_Feeder():
             single_cascade.ff_haar_inference_time,
             single_cascade.pc_inference_time]))
         total_runtime = time.time() - start_time
-        logging.debug('Total Runtime: %.2f seconds', total_runtime)
+        logging.debug(f"Total Runtime: {total_runtime:.2f} seconds")
 
         return total_runtime, single_cascade
 
@@ -514,20 +798,21 @@ class Cascade:
 
         #Do CC
         start_time = time.time()
-        dk_bool, cat_bool, bbs_target_img, pred_cc_bb_full, cc_inference_time = self.do_cc_mobile_stage(cc_target_img=cc_target_img)
+        with suppress_stdout_stderr():
+            dk_bool, cat_bool, bbs_target_img, pred_cc_bb_full, cc_inference_time = self.do_cc_mobile_stage(cc_target_img=cc_target_img)
         logging.debug('CC_Do Time: %.2f seconds', time.time() - start_time)
         event_img_object.cc_cat_bool = cat_bool
         event_img_object.cc_pred_bb = pred_cc_bb_full
         event_img_object.bbs_target_img = bbs_target_img
         event_img_object.cc_inference_time = cc_inference_time
 
-        if cat_bool and bbs_target_img.size != 0:
-            logging.info('Cat Detected!')
-            rec_img = self.cc_mobile_stage.draw_rectangle(img=original_copy_img, box=pred_cc_bb_full, color=(255, 0, 0), text='CC_Pred')
+        if cat_bool and bbs_target_img is not None and bbs_target_img.size != 0:
+            logging.info("Cat Detected!")
+            rec_img = self.cc_mobile_stage.draw_rectangle(img=original_copy_img, box=pred_cc_bb_full, color=(255, 0, 0), text="CC_Pred")
 
             #Do HAAR
             haar_snout_crop, haar_bbs, haar_inference_time, haar_found_bool = self.do_haar_stage(target_img=bbs_target_img, pred_cc_bb_full=pred_cc_bb_full, cc_target_img=cc_target_img)
-            rec_img = self.cc_mobile_stage.draw_rectangle(img=rec_img, box=haar_bbs, color=(0, 255, 255), text='HAAR_Pred')
+            rec_img = self.cc_mobile_stage.draw_rectangle(img=rec_img, box=haar_bbs, color=(0, 255, 255), text="HAAR_Pred")
 
             event_img_object.haar_pred_bb = haar_bbs
             event_img_object.haar_inference_time = haar_inference_time
@@ -542,7 +827,7 @@ class Cascade:
                 bbs_snout_crop, bbs, eye_inference_time = self.do_eyes_stage(eye_target_img=bbs_target_img,
                                                                              cc_pred_bb=pred_cc_bb_full,
                                                                              cc_target_img=cc_target_img)
-                rec_img = self.cc_mobile_stage.draw_rectangle(img=rec_img, box=bbs, color=(255, 0, 255), text='BBS_Pred')
+                rec_img = self.cc_mobile_stage.draw_rectangle(img=rec_img, box=bbs, color=(255, 0, 255), text="BBS_Pred")
                 event_img_object.bbs_pred_bb = bbs
                 event_img_object.bbs_inference_time = eye_inference_time
 
@@ -560,14 +845,14 @@ class Cascade:
             event_img_object.face_box = inf_bb
 
             if face_bool:
-                rec_img = self.cc_mobile_stage.draw_rectangle(img=rec_img, box=inf_bb, color=(255, 255, 255), text='INF_Pred')
-                logging.info('Face Detected!')
+                rec_img = self.cc_mobile_stage.draw_rectangle(img=rec_img, box=inf_bb, color=(255, 255, 255), text="INF_Pred")
+                logging.info("Face Detected!")
 
-                #Do PC
+                # Do PC
                 pred_class, pred_val, inference_time = self.do_pc_stage(pc_target_img=snout_crop)
-                logging.debug(f'Prey Prediction: {pred_class}')
-                logging.debug('Pred_Val: %.2f', pred_val)
-                pc_str = ' PC_Pred: ' + str(pred_class) + ' @ ' + str('%.2f' % pred_val)
+                logging.debug(f"Prey Prediction: {pred_class}")
+                logging.debug(f"Pred_Val: {pred_val:.2f}")
+                pc_str = f" PC_Pred: {pred_class} @ {pred_val:.2f}"
                 color = (0, 0, 255) if pred_class else (0, 255, 0)
                 rec_img = self.input_text(img=rec_img, text=pc_str, text_pos=(15, 100), color=color)
 
@@ -576,15 +861,15 @@ class Cascade:
                 event_img_object.pc_inference_time = inference_time
 
             else:
-                logging.info('No Face Found...')
-                ff_str = 'No_Face'
+                logging.info("No Face Found...")
+                ff_str = "No_Face"
                 rec_img = self.input_text(img=rec_img, text=ff_str, text_pos=(15, 100), color=(255, 255, 0))
 
         else:
-            logging.debug('No Cat Found...')
-            rec_img = self.input_text(img=original_copy_img, text='CC_Pred: NoCat', text_pos=(15, 100), color=(255, 255, 0))
+            logging.debug("No Cat Found...")
+            rec_img = self.input_text(img=original_copy_img, text="CC_Pred: NoCat", text_pos=(15, 100), color=(255, 255, 0))
 
-        #Always save rec_img in event_img object
+        # Always save rec_img in event_img object
         event_img_object.output_img = rec_img
         return event_img_object
 
@@ -592,7 +877,7 @@ class Cascade:
         cc_area = abs(cc_bbs[0][0] - cc_bbs[1][0]) * abs(cc_bbs[0][1] - cc_bbs[1][1])
         haar_area = abs(haar_bbs[0][0] - haar_bbs[1][0]) * abs(haar_bbs[0][1] - haar_bbs[1][1])
         overlap = haar_area / cc_area
-        logging.debug('Overlap: %s', overlap)
+        logging.debug(f"Overlap: {overlap}")
         return overlap
 
     def infere_snout_crop(self, bbs, haar_bbs, bbs_face_bool, bbs_ff_conf, haar_face_bool, haar_ff_conf, cc_target_img):
@@ -715,7 +1000,16 @@ class NodeBot():
         self.last_msg_id = 0
         self.bot_updater = Updater(token=config.BOT_TOKEN)
         self.bot_dispatcher = self.bot_updater.dispatcher
-        self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
+
+        """
+        Removed reboot for now, clicked on it too many times by mistake :P
+        You can enable it in config.py, it if you are running this on a dedicated machine
+        """
+        # test if dedicated machine
+        if config.IS_DEDICATED:
+            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin', '/REBOOT']
+        else:
+            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
 
         self.node_live_img = None
         self.node_queue_info = None
@@ -726,6 +1020,12 @@ class NodeBot():
 
         #Init the listener
         self.init_bot_listener()
+
+    def get_help_menu(self):
+        bot_message = 'Following commands are supported:'
+        for command in self.commands:
+            bot_message += '\n ' + command
+        return bot_message
 
     def init_bot_listener(self):
         telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text='Hi there, NodeBot is online!')
@@ -742,71 +1042,172 @@ class NodeBot():
         self.bot_dispatcher.add_handler(letin)
         reboot = CommandHandler('reboot', self.node_reboot)
         self.bot_dispatcher.add_handler(reboot)
+        self.send_text(self.get_help_menu())
 
         # Start the polling stuff
         self.bot_updater.start_polling()
 
     def bot_help_cmd(self, bot, update):
-        bot_message = 'Following commands supported:'
+        bot_message = 'Following commands are supported:'
         for command in self.commands:
             bot_message += '\n ' + command
         self.send_text(bot_message)
 
     def node_let_in(self, bot, update):
+        self.send_text("🚪️ Unlocking the catflap on user's behalf.")
         self.node_let_in_flag = True
 
     def node_reboot(self, bot, update):
-        for i in range(15):
-            time.sleep(1)
-            bot_message = 'Rebooting in ' + str(15-i) + ' seconds...'
-            self.send_text(bot_message)
-        self.send_text('See ya later Alligator')
-        #os.system("sudo reboot")
-        os.system("logger Cat_Prey_Analyzer called a reboot")
+        # test if dedicated machine
+        if config.IS_DEDICATED:
+            for i in range(15):
+                time.sleep(1)
+                bot_message = 'Rebooting in ' + str(15-i) + ' seconds...'
+                self.send_text(bot_message)
+            logging.info("Telegram bot requested a reboot. Won't do that, just logging it.")
+            self.send_text("REBOOTING.. See ya later Alligator!")
+
+            ### also uncomment this if you REALLY need to reboot
+            #os.system("sudo reboot") # won't do, some may call this as a service or standalone, not on a dedicated Pi..
 
     def bot_send_last_casc_pic(self, bot, update):
         if self.node_last_casc_img is not None:
-            cv2.imwrite('last_casc.jpg', self.node_last_casc_img)
             caption = 'Last Cascade picture:'
             self.send_img(self.node_last_casc_img, caption)
+            logging.info("Sending last cascade image to bot")
         else:
-            self.send_text('No casc img available yet...')
+            self.send_text("No casc img available yet…")
 
     def bot_send_live_pic(self, bot, update):
+        # self.capture_new_image() # only needed if you always want the freshest picture captured from the camera directly
+        # time.sleep(0.2)          # else, it will just send the last captured pic from the queue
         if self.node_live_img is not None:
-            cv2.imwrite('live_img.jpg', self.node_live_img)
-            caption = 'Last live picture:'
+            # Encode image to JPEG format
+            caption = 'Last Live picture:'
             self.send_img(self.node_live_img, caption)
+            logging.info("ℹ️  Sending live image to bot")
         else:
-            self.send_text('No img available yet...')
+            self.send_text("No img available yet…")
+
+    def send_img(self, img, caption, is_encoded=False):
+        if not is_encoded:
+            ret, jpeg = cv2.imencode('.jpg', img)
+            if not ret:
+                self.send_text("❌ Image encoding failed.")
+                return
+            img = jpeg.tobytes()
+
+        # Wrap bytes in a file-like object
+        image_file = BytesIO(img)
+        image_file.name = 'live.jpg'  # Important for Telegram to recognize format
+
+        telegram.Bot(token=config.BOT_TOKEN).send_photo(
+            chat_id=config.CHAT_ID,
+            photo=image_file,
+            caption=caption
+        )
 
     def bot_send_status(self, bot, update):
         if self.node_queue_info is not None and self.node_over_head_info is not None:
-            bot_message = 'Queue length: ' + str(self.node_queue_info) + '\nOverhead: ' + str(self.node_over_head_info) + 's'
+            bot_message = f"Queue length: {self.node_queue_info}\nOverhead: {self.node_over_head_info}s"
         else:
-            bot_message = 'No info yet...'
+            bot_message = "No info yet…"
         self.send_text(bot_message)
 
     def send_text(self, message):
         telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
 
-    def send_img(self, img, caption):
-        cv2.imwrite('degubi.jpg', img)
-        #telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=open('degubi.jpg', 'rb'), caption=caption)
-        with open('degubi.jpg', 'rb') as fh:
-            telegram.Bot(token=config.BOT_TOKEN).send_photo(chat_id=config.CHAT_ID, photo=fh, caption=caption)
-
-class DummyDQueque():
+class DummyDQueue():
     def __init__(self):
         self.target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
 
-    def dummy_queque_filler(self, main_deque):
+    def dummy_queue_filler(self, main_deque):
         while(True):
-            img_name = datetime.now(pytz.timezone('Europe/Berlin')).strftime("%Y_%m_%d_%H-%M-%S.%f")
+            img_name = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
             main_deque.append((img_name, self.target_img))
-            logging.info("Took image, que-length: %d", len(main_deque))
+            logging.info(f"Took image, que-length: {len(main_deque)}")
             time.sleep(0.4)
 
+class Spec_Event_Handler():
+    def __init__(self):
+        self.img_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/input')
+        self.out_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/output')
+
+        self.img_list = [x for x in sorted(os.listdir(self.img_dir)) if'.jpg' in x]
+        self.base_cascade = Cascade()
+
+    def log_to_csv(self, img_event_obj):
+        csv_name = img_event_obj.img_name.split('_')[0] + '_' + img_event_obj.img_name.split('_')[1] + '.csv'
+        file_exists = os.path.isfile(os.path.join(self.out_dir, csv_name))
+        with open(os.path.join(self.out_dir, csv_name), mode='a') as csv_file:
+            headers = ['Img_Name', 'CC_Cat_Bool', 'CC_Time', 'CR_Class', 'CR_Val', 'CR_Time', 'BBS_Time', 'HAAR_Time', 'FF_BBS_Bool', 'FF_BBS_Val', 'FF_BBS_Time', 'Face_Bool', 'PC_Class', 'PC_Val', 'PC_Time', 'Total_Time']
+            writer = csv.DictWriter(csv_file, delimiter=',', lineterminator='\n', fieldnames=headers)
+            if not file_exists:
+                writer.writeheader()
+
+            writer.writerow({'Img_Name':img_event_obj.img_name, 'CC_Cat_Bool':img_event_obj.cc_cat_bool,
+                             'CC_Time':img_event_obj.cc_inference_time, 'CR_Class':img_event_obj.cr_class,
+                             'CR_Val':img_event_obj.cr_val, 'CR_Time':img_event_obj.cr_inference_time,
+                             'BBS_Time':img_event_obj.bbs_inference_time,
+                             'HAAR_Time':img_event_obj.haar_inference_time, 'FF_BBS_Bool':img_event_obj.ff_bbs_bool,
+                             'FF_BBS_Val':img_event_obj.ff_bbs_val, 'FF_BBS_Time':img_event_obj.ff_bbs_inference_time,
+                             'Face_Bool':img_event_obj.face_bool,
+                             'PC_Class':img_event_obj.pc_prey_class, 'PC_Val':img_event_obj.pc_prey_val,
+                             'PC_Time':img_event_obj.pc_inference_time, 'Total_Time':img_event_obj.total_inference_time})
+
+    def debug(self):
+        event_object_list = []
+        for event_img in sorted(self.img_list):
+            event_object_list.append(Event_Element(img_name=event_img, cc_target_img=cv2.imread(os.path.join(self.img_dir, event_img))))
+
+        for event_obj in event_object_list:
+            start_time = time.time()
+            single_cascade = self.base_cascade.do_single_cascade(event_img_object=event_obj)
+            single_cascade.total_inference_time = sum(filter(None, [
+                single_cascade.cc_inference_time,
+                single_cascade.cr_inference_time,
+                single_cascade.bbs_inference_time,
+                single_cascade.haar_inference_time,
+                single_cascade.ff_bbs_inference_time,
+                single_cascade.ff_haar_inference_time,
+                single_cascade.pc_inference_time]))
+            logging.debug(f"Total Inference Time: {single_cascade.total_inference_time}")
+            logging.debug(f"Total Runtime: {time.time() - start_time:.2f} seconds")
+
+            # (Write img to output dir and) log csv of each event
+            #cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
+            self.log_to_csv(img_event_obj=single_cascade)
+
+import signal
+
+def handle_exit(signum, frame):
+    try:
+        if bot_instance is not None:
+            bot_instance.send_text(f"⚠️  CatPreyAnalyzer received signal {signum} (e.g. CTRL+C); shutting down cleanly…")
+        else:
+            print("No bot instance available to notify Telegram.")
+    except Exception as e:
+        print(f"Failed to notify bot on exit: {e}")
+    sys.exit(0)
+
 if __name__ == '__main__':
+    """
     sq_cascade = Sequential_Cascade_Feeder()
-    sq_cascade.queque_handler()
+    sq_cascade.queue_handler()
+    """
+    # Set up signal handlers
+    signal.signal(signal.SIGINT, handle_exit)
+    signal.signal(signal.SIGTERM, handle_exit)
+
+    # Instantiate your Sequential_Cascade_Feeder and assign its bot to the global variable
+    sq_cascade = Sequential_Cascade_Feeder()
+    bot_instance = sq_cascade.bot  # NodeBot instance is created in Sequential_Cascade_Feeder
+
+    try:
+        sq_cascade.queue_handler()
+    except Exception as e:
+        # Optional: send error to bot or log
+        if bot_instance is not None:
+            bot_instance.send_text(f"❌ Unhandled exception: {e}")
+        print(f"Unhandled exception: {e}")
+        sys.exit(1)

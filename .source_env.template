@@ -1,0 +1,14 @@
+# Chat ID and Bot Token according to Telegram API
+export TELEGRAM_CHAT_ID="your_chat_id_here"
+export TELEGRAM_BOT_TOKEN="your_bot_token_here"
+
+# Webhooks and token for home assistant (use more hard-to-guess names for your webhooks)
+export HA_WEBHOOK="http://<home-assistant-host>:8123/api/webhook/your_webhook_name"
+export HA_REST_URL="http://<home-assistant-host>:8123/api/states/your_sensor"
+export HA_REST_TOKEN="your_long_lived_access_token_here"
+
+# Surepet credentials and/or token here
+export SUREPY_DEVICE_ID="your_device_id_here"
+export SUREPY_EMAIL="your_email_here"
+export SUREPY_PASSWORD="your_password_here"
+export SUREPY_TOKEN="$(cat ~/.surepy.token 2>/dev/null || echo 'your_surepy_token_here')"
