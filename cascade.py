@@ -406,12 +406,12 @@ class Sequential_Cascade_Feeder():
             result = asyncio.run(self.surepy_flow())
             if not result:
                 logging.error("❌ Using surepy to unlock catflap failed!")
-            return True
+            return result
         elif self.use_ha:
             result = self.ha_flow()
             if not result:
                 logging.error("❌ Using HA to unlock catflap failed!")
-            return True
+            return result
         return False
 
     # ── Lazy-initialize a Surepy client ──
