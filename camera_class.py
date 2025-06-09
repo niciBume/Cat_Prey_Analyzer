@@ -54,15 +54,21 @@ class Camera:
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
-        self.camera_url = camera_url
-        self.camera_type = self._detect_camera_type()
         self.motion_threshold = getattr(config, "MOTION_THRESHOLD", 5000)  # Adjust as needed
-        self.cap = None
-        self.picam2 = None
         self.cam_x = getattr(config, "CAM_WIDTH", 640)
         self.cam_y = getattr(config, "CAM_HEIGHT", 480)
         self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
+        self.camera_url = camera_url
+        self.camera_type = self._detect_camera_type()
+        self.cap = None
+        self.picam2 = None
         self._load_flip_overrides()
+        if self.motion_threshold < 0:
+            raise ValueError(f"Invalid motion_threshold: {self.motion_threshold}")
+        if self.max_len <= 0:
+            raise ValueError(f"Invalid MAX_QUEUE_LEN: {self.max_len}")
+        if self.sleep_interval <= 0:
+            raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
 
         logging.info(
             f"Motion threshold is set to {self.motion_threshold} "
