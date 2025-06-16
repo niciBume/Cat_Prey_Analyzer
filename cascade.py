@@ -162,13 +162,6 @@ def use_surepy():
         )
         logging.info("⚠️  Surepy module NOT available!")
         return False
-
-    logging.debug(
-        f"\n SUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}\n"
-        f" SUREPY_EMAIL={config.SUREPY_EMAIL}\n"
-        f" SUREPY_PASSWORD={config.SUREPY_PASSWORD}\n"
-        f" SUREPY_TOKEN={config.SUREPY_TOKEN}"
-    )
     logging.info("ℹ️  Surepy module available.")
     return True
 
@@ -183,12 +176,6 @@ def use_ha():
         logging.debug("⚠️  Some HA config attributes are not set or empty.")
         logging.info("⚠️  HA module NOT available!")
         return False
-
-    logging.debug(
-        f"\n HA_WEBHOOK={getattr(config, 'HA_WEBHOOK', None)}"
-        f"\n HA_REST_URL={getattr(config, 'HA_REST_URL', None)}"
-        f"\n HA_REST_TOKEN={getattr(config, 'HA_REST_TOKEN', None)}"
-    )
     logging.info("ℹ️  HA webhook available.")
     return True
 
