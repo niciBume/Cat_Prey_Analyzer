@@ -23,10 +23,13 @@ Cat Prey Analyzer - Configuration Logic Summary
 """
 
 import os, locale
+from dotenv import load_dotenv
 try:
     import pytz
 except ImportError:
     raise ImportError("pytz module is required. Install with: pip install pytz")
+
+load_dotenv()
 
 def detect_system_timezone():
     """Try to detect system timezone from /etc/timezone or /etc/localtime."""

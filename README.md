@@ -19,8 +19,8 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so, your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as explained in the [StackOverflow guide on obtaining a Telegram group chat ID](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
 
-- Create (or copy) a `.source_env` file from the template, fill in your secrets, then source it before running `cascade.py`.
-  
+- Create a `.env` or copy file `.env.example` in the root directory, fill in your secrets, then it will be sourced before running `cascade.py`.
+
 Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###` to your liking, then start `cascade.py` like this:
 
 ```bash
