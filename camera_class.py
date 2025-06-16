@@ -52,29 +52,29 @@ class Camera:
         self.pause_event = Event()
         self.pause_duration = 0.0
         self._pause_lock = Lock()
-        self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
-        self.max_len = getattr(config, "MAX_QUEUE_LEN", 20)
-        self.motion_threshold = getattr(config, "MOTION_THRESHOLD", 5000)  # Adjust as needed
         self.cam_x = getattr(config, "CAM_WIDTH", 640)
         self.cam_y = getattr(config, "CAM_HEIGHT", 480)
         self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.heartbeat_interval = getattr(config, "HEARTBEAT_INTERVAL", 60)  # seconds
+        self.motion_threshold = getattr(config, "MOTION_THRESHOLD", 5000)  # Adjust as needed
+        if self.motion_threshold < 0:
+            raise ValueError(f"Invalid motion_threshold: {self.motion_threshold}")
+        self.max_q_len = getattr(config, "MAX_QUEUE_LEN", 20)
+        if self.max_q_len <= 0:
+            raise ValueError(f"Invalid MAX_QUEUE_LEN: {self.max_q_len}")
+        self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
+        if self.sleep_interval <= 0:
+            raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
         self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
         self.cap = None
         self.picam2 = None
         self._load_flip_overrides()
-        if self.motion_threshold < 0:
-            raise ValueError(f"Invalid motion_threshold: {self.motion_threshold}")
-        if self.max_len <= 0:
-            raise ValueError(f"Invalid MAX_QUEUE_LEN: {self.max_len}")
-        if self.sleep_interval <= 0:
-            raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
 
         logging.info(
-            f"Motion threshold is set to {self.motion_threshold} "
+            f"Motion threshold is set to {self.motion_threshold} / "
             f"({'low' if self.motion_threshold < 3000 else 'medium' if self.motion_threshold < 7000 else 'high'})"
         )
 
@@ -171,37 +171,62 @@ class Camera:
         logging.debug("Camera resources released.")
         gc.collect()
         self._initialize_camera()
+        self.restart_attempts = 0
 
     def fill_queue(self):
-        i = 0
-        last_enqueue_time = time.time()
-        self.last_motion_enqueue_time = time.time() # Track last motion-based enqueue
-        logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
-        prev_gray = None  # Store the previous grayscale frame
+        self._prefill_queue()
+        self._main_capture_loop()
 
-        # Pre-fill queue with enough frames to exceed fps_offset
+    def _capture_frame(self):
+        if self.camera_type == "libcamera" and self.picam2:
+            rgb = self.picam2.capture_array("main")
+            frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        else:
+            ret, frame = self.cap.read()
+            if not ret or frame is None:
+                logging.debug("RETURNING None, 'Not ret and frame is None'")
+                return None
+            if self.hflip or self.vflip:
+                code = -1 if self.hflip and self.vflip else (1 if self.hflip else 0)
+                frame = cv2.flip(frame, code)
+        return frame
+
+    def _prefill_queue(self):
+        prev_gray = None
         num_prefill = getattr(self, "fps_offset", 2) + 1
         for _ in range(num_prefill):
-            # Usual frame capture logic:
-            if self.camera_type == "libcamera" and self.picam2:
-                rgb = self.picam2.capture_array("main")
-                frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-            else:
-                ret, frame = self.cap.read()
-                if not ret or frame is None:
-                    continue
-                if self.hflip or self.vflip:
-                    code = -1 if self.hflip and self.vflip else (1 if self.hflip else 0)
-                    frame = cv2.flip(frame, code)
-            timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
-            if len(self.q) < self.max_len:
-                self.q.append((timestamp, frame))
-            time.sleep(self.sleep_interval)  # Small delay to avoid identical frames
+            frame = self._capture_frame()
+            if frame is not None:
+                timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
+                if len(self.q) < self.max_q_len:
+                    self.q.append((timestamp, frame))
+            time.sleep(self.sleep_interval)
 
+    def _process_motion_detection(self, frame, prev_gray):
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+        gray = cv2.GaussianBlur(gray, (21, 21), 0)
+        motion_detected = False
+        motion_pixels = 0
+
+        if prev_gray is not None:
+            frame_delta = cv2.absdiff(prev_gray, gray)
+            thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+            thresh = cv2.dilate(thresh, None, iterations=2)
+            motion_pixels = cv2.countNonZero(thresh)
+            if motion_pixels > self.motion_threshold:
+                motion_detected = True
+                logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
+        return gray, motion_detected
+
+    def _main_capture_loop(self):
+        i = 0
+        last_enqueue_time = time.time()
+        self.last_motion_enqueue_time = time.time()
+        logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
+        prev_gray = None
 
         while True:
             try:
-                # Pause and clear queue if pause_event is set
                 if self.pause_event.is_set():
                     with self._pause_lock:
                         if len(self.q):
@@ -214,75 +239,44 @@ class Camera:
                     self.pause_event.clear()
                     continue
 
-                # Capture frame
-                if self.camera_type == "libcamera" and self.picam2:
-                    rgb = self.picam2.capture_array("main")
-                    frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-                else:
-                    ret, frame = self.cap.read()
-                    if not ret or frame is None:
-                        logging.warning("Failed to read frame from camera. Restarting...")
-                        time.sleep(0.2)
-                        self._restart_camera()
-                        continue
+                frame = self._capture_frame()
+                if frame is not None:
+                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
+                    if len(self.q) < self.max_q_len:
+                        self.q.append((timestamp, frame))
 
-                    # Apply flip if configured
-                    if self.hflip or self.vflip:
-                        code = -1 if self.hflip and self.vflip else (1 if self.hflip else 0)
-                        frame = cv2.flip(frame, code)
-
-                # Convert to grayscale for motion detection
-                gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-                gray = cv2.GaussianBlur(gray, (21, 21), 0)
-
-                motion_detected = False
-                if prev_gray is not None:
-                    # Compute absolute difference between current and previous frame
-                    frame_delta = cv2.absdiff(prev_gray, gray)
-                    thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
-                    thresh = cv2.dilate(thresh, None, iterations=2)
-                    motion_pixels = cv2.countNonZero(thresh)
-
-                    if motion_pixels > self.motion_threshold:
-                        motion_detected = True
-                        logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
-                    #else: # this one is really verbose..
-                    #    logging.debug(f"No significant motion: {motion_pixels} changed pixels.")
-
-                prev_gray = gray  # Update previous frame
+                gray, motion_detected = self._process_motion_detection(frame, prev_gray)
+                prev_gray = gray
                 now = time.time()
 
-                # 1. Motion-based enqueuing
                 if motion_detected and (now - last_enqueue_time >= self.sleep_interval):
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
-                    if len(self.q) < self.max_len:
+                    if len(self.q) < self.max_q_len:
                         self.q.append((timestamp, frame))
                         logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue length: {len(self.q)}")
                     else:
-                        logging.warning("Queue is full (%d), dropping frame.", self.max_len)
+                        logging.warning("Queue is full (%d), dropping frame.", self.max_q_len)
                     last_enqueue_time = now
 
-                    i += 1
-                    if i >= self.queue_cycles:
-                        logging.info(f"Refreshing camera after {self.queue_cycles} frames.")
-                        self._restart_camera()
-                        i = 0
-
-                # 2. Heartbeat/periodic enqueuing (if no motion for heartbeat_interval)
                 elif (now - self.last_motion_enqueue_time) > self.heartbeat_interval and (now - last_enqueue_time >= self.sleep_interval):
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
-                    if len(self.q) < self.max_len:
+                    if len(self.q) < self.max_q_len:
                         self.q.append((timestamp, frame))
                         logging.info(f"🌙 Heartbeat: Enqueued frame at {timestamp} | Queue length: {len(self.q)} [quiet]")
                     else:
-                        logging.warning("Queue is full (%d), dropping frame.", self.max_len)
+                        logging.warning("Queue is full (%d), dropping frame.", self.max_q_len)
                     last_enqueue_time = now
-                    self.last_motion_enqueue_time = now  # treat as activity for next interval
+                    self.last_motion_enqueue_time = now
 
                 time.sleep(0.05)
+
+                i += 1
+                if i >= self.queue_cycles:
+                    logging.info(f"Refreshing camera after {self.queue_cycles} frames.")
+                    self._restart_camera()
+                    i = 0
 
             except Exception as e:
                 logging.error("Exception in fill_queue (%s): %s", type(e).__name__, e)
                 self._restart_camera()
                 time.sleep(1)
-
