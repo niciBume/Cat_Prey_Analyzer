@@ -239,7 +239,6 @@ class Sequential_Cascade_Feeder():
         logging.debug(f"Log Dir: {self.log_dir}")
         self.event_nr = 0
         self.base_cascade = Cascade()
-        self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.MAX_PROCESSES = 7
         self.EVENT_FLAG = False
         self.event_objects = []
@@ -258,6 +257,8 @@ class Sequential_Cascade_Feeder():
         self.queues_cumuli_in_event = []
         self.bot = NodeBot()
         self.processing_pool = []
+        self.open_time = getattr(config, "OPEN_TIME", 60)
+        self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.max_queue_len = getattr(config, "MAX_QUEUE_LEN", 20)
         self.main_deque = deque(maxlen=self.max_queue_len)
         self.camera_url = CAMERA_URL
@@ -267,7 +268,6 @@ class Sequential_Cascade_Feeder():
         self.use_surepy = use_surepy
         self.use_ha = use_ha
         self.use_surepet = use_surepet
-        self.open_time = config.OPEN_TIME
 
     def pause_camera(self):
         if hasattr(self, "camera"):
@@ -618,12 +618,14 @@ class Sequential_Cascade_Feeder():
                 logging.debug(f"Deque type: {type(self.main_deque)} | Length: {len(self.main_deque)}")
                 self.queue_worker()
             else:
-                #logging.debug(f"Nothing to work with => Queue_length: {len(self.main_deque)}")
-                time.sleep(0.15)
+                logging.debug(f"Nothing to work with => Queue_length: {len(self.main_deque)}")
+                time.sleep(0.05)
 
             # Check if user force opens the door
             if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
                 if use_surepet:
+                    logging.info("Opening flap..")
+                    self.bot.send_text("ℹ️  Opening flap..")
                     self.control_catflap()
                 else:
                     self.bot.send_text("ℹ️  No backend available to open the catflap.")
@@ -687,7 +689,7 @@ class Sequential_Cascade_Feeder():
                     p = Process(target=self.send_no_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
                     self.processing_pool.append(p)
-                    #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
+                    self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.bot.send_text("😸️ Cat is clean, unlocking the catflap temporarily")
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
@@ -696,7 +698,7 @@ class Sequential_Cascade_Feeder():
                     p = Process(target=self.send_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
                     p.start()
                     self.processing_pool.append(p)
-                    #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
+                    self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.reset_cumuli_et_al()
                 else:
                     self.NO_PREY_FLAG = False
