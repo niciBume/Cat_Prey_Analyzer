@@ -603,7 +603,7 @@ class Sequential_Cascade_Feeder():
 
     def queue_handler(self):
         # Do this to force run all networks s.t. the network inference time stabilizes
-        self.single_debug()
+        #self.single_debug()
 
         # Pass self.main_deque to the camera
         self.camera = Camera(self.main_deque, self.camera_url)
@@ -615,10 +615,10 @@ class Sequential_Cascade_Feeder():
 
         while True:
             if len(self.main_deque) > self.fps_offset:
-                logging.debug(f"Deque type: {type(self.main_deque)} | Length: {len(self.main_deque)}")
+                logging.debug(f"Deque type: {type(self.main_deque)}, ID={id(self.main_deque)}, maxlen={self.main_deque.maxlen}, current len={len(self.main_deque)}")
                 self.queue_worker()
             else:
-                logging.debug(f"Nothing to work with => Queue_length: {len(self.main_deque)}")
+                #logging.debug(f"Nothing to work with => Queue_length: {len(self.main_deque)}")
                 time.sleep(0.05)
 
             # Check if user force opens the door
@@ -634,7 +634,7 @@ class Sequential_Cascade_Feeder():
             self.reset_cumuli_et_al()
 
     def queue_worker(self):
-        logging.debug(f"Working the Queue with len: {len(self.main_deque)}")
+        logging.debug(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
         start_time = time.time()
 
         # Ensure we have enough elements before accessing
@@ -646,10 +646,10 @@ class Sequential_Cascade_Feeder():
         timestamp, frame = self.main_deque[self.fps_offset]
         cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
         logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
-        done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
+        done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
         logging.debug(f"Timestamp at Done Runtime: {done_timestamp}")
 
-        overhead = datetime.strptime(done_timestamp, "%c.%f") - datetime.strptime(timestamp, "%c.%f")
+        overhead = datetime.strptime(done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(timestamp, "%Y_%m_%d_%H-%M-%S.%f")
         logging.debug(f"Overhead: {overhead.total_seconds():.2f} seconds")
 
         # Add this such that the bot has some info
@@ -1125,7 +1125,7 @@ class DummyDQueue():
 
     def dummy_queue_filler(self, main_deque):
         while(True):
-            img_name = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
+            img_name = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
             main_deque.append((img_name, self.target_img))
             logging.info(f"Took image, que-length: {len(main_deque)}")
             time.sleep(0.4)

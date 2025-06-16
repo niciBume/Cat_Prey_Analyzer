@@ -61,9 +61,9 @@ class Camera:
         self.motion_threshold = getattr(config, "MOTION_THRESHOLD", 5000)  # Adjust as needed
         if self.motion_threshold < 0:
             raise ValueError(f"Invalid motion_threshold: {self.motion_threshold}")
-        self.max_q_len = getattr(config, "MAX_QUEUE_LEN", 20)
-        if self.max_q_len <= 0:
-            raise ValueError(f"Invalid MAX_QUEUE_LEN: {self.max_q_len}")
+        self.max_queue_len = getattr(config, "MAX_QUEUE_LEN", 20)
+        if self.max_queue_len <= 0:
+            raise ValueError(f"Invalid MAX_QUEUE_LEN: {self.max_queue_len}")
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         if self.sleep_interval <= 0:
             raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
@@ -173,10 +173,6 @@ class Camera:
         self._initialize_camera()
         self.restart_attempts = 0
 
-    def fill_queue(self):
-        self._prefill_queue()
-        self._main_capture_loop()
-
     def _capture_frame(self):
         if self.camera_type == "libcamera" and self.picam2:
             rgb = self.picam2.capture_array("main")
@@ -191,15 +187,20 @@ class Camera:
                 frame = cv2.flip(frame, code)
         return frame
 
+    def fill_queue(self):
+        self._prefill_queue()
+        self._main_capture_loop()
+
     def _prefill_queue(self):
         prev_gray = None
-        num_prefill = getattr(self, "fps_offset", 2) + 1
+        num_prefill = self.fps_offset + 1
         for _ in range(num_prefill):
             frame = self._capture_frame()
             if frame is not None:
-                timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
-                if len(self.q) < self.max_q_len:
+                timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                if len(self.q) < self.max_queue_len:
                     self.q.append((timestamp, frame))
+                    logging.debug(f"Enqueued first frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} max_queue_len={self.max_queue_len}, maxlen={self.q.maxlen}")
             time.sleep(self.sleep_interval)
 
     def _process_motion_detection(self, frame, prev_gray):
@@ -221,12 +222,14 @@ class Camera:
     def _main_capture_loop(self):
         i = 0
         last_enqueue_time = time.time()
-        self.last_motion_enqueue_time = time.time()
+        self.last_heartbeat_enqueue_time = time.time()
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
         prev_gray = None
 
         while True:
             try:
+                logging.debug(f"camera q ID={id(self.q)}, maxlen={self.q.maxlen}, len={len(self.q)}, self.sleep_interval={self.sleep_interval}")
+
                 if self.pause_event.is_set():
                     with self._pause_lock:
                         if len(self.q):
@@ -240,33 +243,28 @@ class Camera:
                     continue
 
                 frame = self._capture_frame()
-                if frame is not None:
-                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
-                    if len(self.q) < self.max_q_len:
-                        self.q.append((timestamp, frame))
-
                 gray, motion_detected = self._process_motion_detection(frame, prev_gray)
                 prev_gray = gray
                 now = time.time()
 
                 if motion_detected and (now - last_enqueue_time >= self.sleep_interval):
-                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
-                    if len(self.q) < self.max_q_len:
+                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                    if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue length: {len(self.q)}")
+                        logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} max_queue_len={self.max_queue_len}, maxlen={self.q.maxlen}")
                     else:
-                        logging.warning("Queue is full (%d), dropping frame.", self.max_q_len)
+                        logging.warning("Queue is full (%d), dropping frame.", self.max_queue_len)
                     last_enqueue_time = now
 
-                elif (now - self.last_motion_enqueue_time) > self.heartbeat_interval and (now - last_enqueue_time >= self.sleep_interval):
-                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%c.%f")
-                    if len(self.q) < self.max_q_len:
+                elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval and (now - last_enqueue_time >= self.sleep_interval):
+                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                    if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        logging.info(f"🌙 Heartbeat: Enqueued frame at {timestamp} | Queue length: {len(self.q)} [quiet]")
+                        logging.info(f"🌙 Heartbeat: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet] max_queue_len={self.max_queue_len}, maxlen={self.q.maxlen}")
                     else:
-                        logging.warning("Queue is full (%d), dropping frame.", self.max_q_len)
+                        logging.warning("Queue is full (%d), dropping frame.", self.max_queue_len)
                     last_enqueue_time = now
-                    self.last_motion_enqueue_time = now
+                    self.last_heartbeat_enqueue_time = now
 
                 time.sleep(0.05)
 
