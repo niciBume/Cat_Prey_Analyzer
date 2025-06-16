@@ -608,8 +608,9 @@ class Sequential_Cascade_Feeder():
         # Pass self.main_deque to the camera
         self.camera = Camera(self.main_deque, self.camera_url)
 
-        # Start the camera fill loop
-        camera_thread = Thread(target=self.camera.fill_queue, daemon=True)
+        self.camera.prefill_queue() # Prefill synchronously
+        # Only now start the camera thread and the consumer
+        camera_thread = Thread(target=self.camera.main_capture_loop, daemon=True)
         camera_thread.start()
         self.bot.send_text("ℹ️  Starting camera loop")
 
@@ -630,8 +631,7 @@ class Sequential_Cascade_Feeder():
                 else:
                     self.bot.send_text("ℹ️  No backend available to open the catflap.")
                     logging.info("ℹ️  No backend available to open the catflap.")
-
-            self.reset_cumuli_et_al()
+                self.reset_cumuli_et_al()
 
     def queue_worker(self):
         logging.debug(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
@@ -661,6 +661,7 @@ class Sequential_Cascade_Feeder():
         for _ in range(self.fps_offset + 1):
             if self.main_deque:
                 self.main_deque.popleft()
+                logging.debug(f"Dequeued frame, queue length now: {len(self.main_deque)}")
 
         if cascade_obj.cc_cat_bool == True:
             #We are inside an event => add event_obj to list
