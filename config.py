@@ -103,7 +103,7 @@ CAMERA_FLIP_OVERRIDES = {
     "rtsp://192.168.1.59:8554/unicast": {"hflip": False, "vflip": False},
     "rtsp://user:pass@192.168.1.58:8554/unicast": {"hflip": False, "vflip": False},
     "usb:0": {"hflip": False, "vflip": True},  # Simulated USB cam identifier
-    "default": {"hflip": True, "vflip": True}
+    "default": {"hflip": False, "vflip": False}
 }
 
 # The heartbeat interval
