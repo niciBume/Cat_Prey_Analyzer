@@ -250,7 +250,7 @@ class Camera:
                         self.q.append((timestamp, frame))
                         logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
                     else:
-                        logging.warning("Queue is full (%d), dropping frame.", self.max_queue_len)
+                        logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
                     last_enqueue_time = now
 
                 elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval: # and (now - last_enqueue_time >= self.sleep_interval):
@@ -259,7 +259,7 @@ class Camera:
                         self.q.append((timestamp, frame))
                         logging.info(f"🌙 Heartbeat: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
-                        logging.warning("Queue is full (%d), dropping frame.", self.max_queue_len)
+                        logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
                     last_enqueue_time = now
                     self.last_heartbeat_enqueue_time = now
 
@@ -272,6 +272,6 @@ class Camera:
                     i = 0
 
             except Exception as e:
-                logging.error("Exception in fill_queue (%s): %s", type(e).__name__, e)
+                logging.error(f"Exception in fill_queue {type(e).__name__}: {e}")
                 self._restart_camera()
                 time.sleep(1)
