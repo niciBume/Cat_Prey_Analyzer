@@ -19,12 +19,11 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so, your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as explained in the [StackOverflow guide on obtaining a Telegram group chat ID](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
 
-- Create a `.env` or copy file `.env.example` in the root directory, fill in your secrets, then it will be sourced before running `cascade.py`.
+- Create an `.env` file (or copy it from `.env.example`) in the root directory, fill in your secrets, then it will be sourced before running `cascade.py`. The syntax of .env files supported by python-dotenv is similar to that of Bash. Take a look at [python-dotenv](https://pypi.org/project/python-dotenv/).
 
-Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###` to your liking, then start `cascade.py` like this:
+Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`, then start `cascade.py` like this:
 
 ```bash
-source .source_env && \
 python3 cascade.py rtsp://192.168.1.1/unicast --log debug
 ```
 
@@ -38,20 +37,20 @@ The system is now running, and you can check out the bot commands via `/help`. B
 For these two following steps you need to get your Sure Petcare's <catflap ID> by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note the ID from the URL you see in your browser, it'll look something like this: `https://surepetcare.io/device/12345678/details`.
 
 # Configuring Surepy
-You need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), then set your catflap ID and credentials (either email AND password, the surepy token, or both) in the '.source_env' file.
+You need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), then set your catflap ID and credentials (either email AND password, the surepy token, or both) in the `.env` file.
 
 # Configuring Home Assistant
 You need two URLs for controlling the catflap through homeassistant, a REST API URL for getting the current catflap locking status and a WEBHOOK URL for controlling it.
 
 For the REST API, you need to generate a token as shown in [this article](https://developers.home-assistant.io/docs/api/rest/).
 
-Put your URL and access token (without the 'Bearer ' part) into your '.source_env' file. The URL will look something like this (replace 'sensor.cat_flap' with the actual name of your sensor in hassio), for example:
+Put your URL and access token (without the 'Bearer ' part) into your `.env` file. The URL will look something like this (replace 'sensor.cat_flap' with the actual name of your sensor in hassio), for example:
 
 ```http
 http://192.168.1.24:8123/api/states/sensor.cat_flap
 ```
 
-The webhook triggered automation for controlling the catflap looks like this:
+The webhook triggered automation for controlling the catflap looks like this (replace 12345678 with your catflap ID):
 
 ```yaml
 alias: CatPreyAnalyser Lock/Unlock
@@ -71,7 +70,7 @@ actions:
 
 - New addition: optional command line attribute `-b` or `--backend`, which can be either 'surepy' or 'ha'.
 
-You can now specify a preferred backend for un/locking the catflap, so if you configured both in .source_env, you can select the one you want to use. If the chosen backend doesn’t work, there’s no fall-back to the other one. An error will be shown instead.
+You can now specify a preferred backend for un/locking the catflap, so if you configured both in .source_env, you can select the one you want to use. If the so chosen backend doesn’t work, there’s no fall-back to the other one. An error will be shown instead.
 
 Here's a full help menu of the main script cascade.py:
 
@@ -86,8 +85,8 @@ whether a cat is bringing prey, managing catflap control
 either through the python surepy module or through homeassistant.
 It communicates with the user and can be controlled through telegram app.
 
-Create a [hidden] .source_env file containing your secrets and
-'source' it before firing cascade.py.
+Create a [hidden] .env file containing your secrets and 'source' it before
+firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
 You can also tweak the rest of the values in config.py for better performance.
 
 options:
@@ -106,7 +105,7 @@ options:
                         Force use of one of the following backends for catflap un/locking)
                                   - surepy (use surepy module)
                                   - ha (use homeassistant REST/Webhook)
-                                  make sure to define correct settings in the .source_env file
+                                  make sure to define correct settings in the .env file
 ```
 
 # A word of caution
