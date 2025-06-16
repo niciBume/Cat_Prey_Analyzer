@@ -58,8 +58,8 @@ whether a cat is bringing prey, managing catflap control
 either through the python surepy module or through homeassistant.
 It communicates with the user and can be controlled through telegram app.
 
-Create a [hidden] .source_env filecontaining your secrets and
-'source' it before firing cascade.py.
+Create a [hidden] .env file containing your secrets and 'source' it before
+firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
 You can also tweak the rest of the values in config.py for better performance.
 """,
     formatter_class=argparse.RawTextHelpFormatter
@@ -92,7 +92,7 @@ parser.add_argument(
         help="""Force use of one of the following backends for catflap un/locking)
           - surepy (use surepy module)
           - ha (use homeassistant REST/Webhook)
-          make sure to define correct settings in the .source_env file
+          make sure to define correct settings in the .env file
         """,
         )
 
