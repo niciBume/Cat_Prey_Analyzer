@@ -282,6 +282,7 @@ class Camera:
             except Exception as e:
                 if asyncio.iscoroutine(e):
                     print("CAUGHT COROUTINE IN EXCEPTION HANDLER!", e)
+                    logging.error("❗ Coroutine object was caught as Exception in shutdown handler!")
                     return
                 logging.error(f"Exception in fill_queue {type(e).__name__}: {e}")
                 self._restart_camera()
