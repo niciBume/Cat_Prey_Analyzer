@@ -57,7 +57,7 @@ def detect_system_timezone():
 def _require_env(var: str) -> str:
     val = os.getenv(var)
     if val is None:
-        raise RuntimeError(f"Environment variable {var} must be set.\n\nDid you forget to source your 'env' file?")
+        fraise RuntimeError(f"Environment variable {var} must be set.\n\nDid you forget to source your 'env' file?")
     return val
 
 # Get system internal timezone
@@ -104,7 +104,7 @@ CAM_HEIGHT = 1080
 CAMERA_FLIP_OVERRIDES = {
     "http://192.168.1.22:9000/mjpg": {"hflip": True, "vflip": False},
     "rtsp://192.168.1.59:554/unicast": {"hflip": False, "vflip": False},
-    "rtsp://XXXX:YYYY@192.168.1.58:8554/unicast": {"hflip": False, "vflip": False},
+    "rtsp://User_ChangeMe:Password_ChangeMe@192.168.1.58:8554/unicast": {"hflip": False, "vflip": False},
     "usb:0": {"hflip": False, "vflip": True},  # Simulated USB cam identifier
     "default": {"hflip": False, "vflip": False}
 }
