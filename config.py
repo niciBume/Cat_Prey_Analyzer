@@ -57,7 +57,7 @@ def detect_system_timezone():
 def _require_env(var: str) -> str:
     val = os.getenv(var)
     if val is None:
-        fraise RuntimeError(f"Environment variable {var} must be set.\n\nDid you forget to source your 'env' file?")
+        raise RuntimeError(f"Environment variable {var} must be set.\n\nDid you forget to source your 'env' file?")
     return val
 
 # Get system internal timezone
