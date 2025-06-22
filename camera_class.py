@@ -211,7 +211,7 @@ class Camera:
                     self.q.append((timestamp, frame))
                     logging.debug(f"Prequeued first frames at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} max_queue_len={self.max_queue_len}, maxlen={self.q.maxlen}, maxlen={self.q.maxlen}")
             else:
-                logging.error(f"Frame was None!")
+                logging.error("Frame was None!")
             time.sleep(self.sleep_interval)
 
     def _interruptible_sleep(self, duration):
