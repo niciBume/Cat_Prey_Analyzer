@@ -226,7 +226,6 @@ class Camera:
 
     def main_capture_loop(self):
         i = 0
-        last_enqueue_time = time.time()
         self.last_heartbeat_enqueue_time = time.time()
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
         prev_gray = None
@@ -258,7 +257,6 @@ class Camera:
                         logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
                     else:
                         logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
-                    last_enqueue_time = now
                 elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval:
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
                     if len(self.q) < self.max_queue_len:
@@ -266,7 +264,6 @@ class Camera:
                         logging.info(f"🌙 Heartbeat: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
                         logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
-                    last_enqueue_time = now
                     self.last_heartbeat_enqueue_time = now
 
                 self._interruptible_sleep(self.sleep_interval)
