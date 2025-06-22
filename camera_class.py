@@ -27,11 +27,7 @@ Cat Prey Analyzer - Camera and Frame Queue Logic Summary
 """
 
 from datetime import datetime
-import cv2
-import time
-import logging
-import gc
-import config
+import cv2, time, logging, gc, config, asyncio
 from threading import Event, Lock
 
 # Conditionally import Picamera2 if available
@@ -45,10 +41,12 @@ except ImportError:
 
 
 class Camera:
-    def __init__(self, q, camera_url):
+    def __init__(self, q, camera_url, shutdown_flag):
+        self.q = q
+        self.camera_url = camera_url
+        self.shutdown_flag = shutdown_flag
         self.restart_attempts = 0
         self.max_restart_attempts = 5
-        self.q = q
         self.pause_event = Event()
         self.pause_duration = 0.0
         self._pause_lock = Lock()
@@ -67,7 +65,6 @@ class Camera:
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         if self.sleep_interval <= 0:
             raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
-        self.camera_url = camera_url
         self.camera_type = self._detect_camera_type()
         self.cap = None
         self.picam2 = None
@@ -217,6 +214,16 @@ class Camera:
                 logging.error(f"Frame was None!")
             time.sleep(self.sleep_interval)
 
+    def _interruptible_sleep(self, duration):
+        step = 0.1  # seconds
+        waited = 0.0
+        while waited < duration:
+            if self.shutdown_flag.is_set():
+                break
+            to_sleep = min(step, duration - waited)
+            time.sleep(to_sleep)
+            waited += to_sleep
+
     def main_capture_loop(self):
         i = 0
         last_enqueue_time = time.time()
@@ -224,7 +231,7 @@ class Camera:
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
         prev_gray = None
 
-        while True:
+        while not self.shutdown_flag.is_set():
             try:
                 #logging.debug(f"camera q ID={id(self.q)}, maxlen={self.q.maxlen}, len={len(self.q)}, self.sleep_interval={self.sleep_interval}")
                 if self.pause_event.is_set():
@@ -235,7 +242,7 @@ class Camera:
                         logging.info(f"Queueing paused for {self.pause_duration} seconds.")
                         pause_duration = self.pause_duration
                         self.pause_duration = 0.0
-                    time.sleep(pause_duration)
+                    self._interruptible_sleep(pause_duration)
                     self.pause_event.clear()
                     continue
 
@@ -244,7 +251,7 @@ class Camera:
                 prev_gray = gray
                 now = time.time()
 
-                if motion_detected: # and (now - last_enqueue_time >= self.sleep_interval):
+                if motion_detected:
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
@@ -252,8 +259,7 @@ class Camera:
                     else:
                         logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
                     last_enqueue_time = now
-
-                elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval: # and (now - last_enqueue_time >= self.sleep_interval):
+                elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval:
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
@@ -263,7 +269,7 @@ class Camera:
                     last_enqueue_time = now
                     self.last_heartbeat_enqueue_time = now
 
-                time.sleep(self.sleep_interval)
+                self._interruptible_sleep(self.sleep_interval)
 
                 i += 1
                 if i >= self.queue_cycles:
@@ -271,7 +277,14 @@ class Camera:
                     self._restart_camera()
                     i = 0
 
+                self._interruptible_sleep(0.05)
+
             except Exception as e:
+                if asyncio.iscoroutine(e):
+                    print("CAUGHT COROUTINE IN EXCEPTION HANDLER!", e)
+                    feeder.bot.send_text("❗ Coroutine object was caught as Exception in shutdown handler!")
+                    return
                 logging.error(f"Exception in fill_queue {type(e).__name__}: {e}")
                 self._restart_camera()
-                time.sleep(1)
+                self._interruptible_sleep(1)
+        logging.info("Camera loop exiting (shutdown_flag set)")
