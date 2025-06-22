@@ -70,13 +70,18 @@ class Camera:
         self.picam2 = None
         self._load_flip_overrides()
 
-        logging.info(
-            f"Motion threshold is set to {self.motion_threshold} / "
-            f"({'low' if self.motion_threshold < 3000 else 'medium' if self.motion_threshold < 7000 else 'high'})"
-        )
+        logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
         # Initialize hardware
         self._initialize_camera()
+
+    def _get_threshold_category(self, threshold):
+        if threshold < 3000:
+            return 'low'
+        elif threshold < 7000:
+            return 'medium'
+        else:
+            return 'high'
 
     def _load_flip_overrides(self):
         key = str(self.camera_url)
