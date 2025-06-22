@@ -27,7 +27,7 @@ from dotenv import load_dotenv
 try:
     import pytz
 except ImportError:
-    raise ImportError("pytz module is required. Install with: pip install pytz")
+    raise ImportError("pytz module is required. Install with: pip install pytz") from None
 
 load_dotenv()
 
