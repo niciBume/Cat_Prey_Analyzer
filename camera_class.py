@@ -70,6 +70,7 @@ class Camera:
         self.picam2 = None
         self._load_flip_overrides()
 
+        threshold_category = self._get_threshold_category(self.motion_threshold)
         logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
         # Initialize hardware
