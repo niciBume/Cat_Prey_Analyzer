@@ -46,7 +46,7 @@ class Camera:
         self.camera_url = camera_url
         self.shutdown_flag = shutdown_flag
         self.restart_attempts = 0
-        self.max_restart_attempts = 5
+        self.max_restart_attempts = 10
         self.pause_event = Event()
         self.pause_duration = 0.0
         self._pause_lock = Lock()
@@ -79,10 +79,9 @@ class Camera:
     def _get_threshold_category(self, threshold):
         if threshold < 3000:
             return 'low'
-        elif threshold < 7000:
+        if threshold < 7000:
             return 'medium'
-        else:
-            return 'high'
+        return 'high'
 
     def _load_flip_overrides(self):
         key = str(self.camera_url)
