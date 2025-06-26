@@ -27,7 +27,7 @@ Cat Prey Analyzer - Camera and Frame Queue Logic Summary
 """
 
 from datetime import datetime
-import cv2, time, logging, gc, config, asyncio
+import os, cv2, time, logging, gc, config, asyncio
 from threading import Event, Lock
 
 # Conditionally import Picamera2 if available
@@ -41,19 +41,16 @@ except ImportError:
 
 
 class Camera:
-    def __init__(self, q, camera_url, shutdown_flag):
+    def __init__(self, q, camera_key, shutdown_flag):
         self.q = q
-        self.camera_url = camera_url
+        self.camera_key = camera_key
         self.shutdown_flag = shutdown_flag
         self.restart_attempts = 0
-        self.max_restart_attempts = 10
+        self.max_restart_attempts = 5
         self.pause_event = Event()
         self.pause_duration = 0.0
         self._pause_lock = Lock()
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
-        self.cam_x = getattr(config, "CAM_WIDTH", 640)
-        self.cam_y = getattr(config, "CAM_HEIGHT", 480)
-        self.flip_overrides = getattr(config, "CAMERA_FLIP_OVERRIDES", {})
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.heartbeat_interval = getattr(config, "HEARTBEAT_INTERVAL", 60)  # seconds
         self.motion_threshold = getattr(config, "MOTION_THRESHOLD", 5000)  # Adjust as needed
@@ -65,35 +62,50 @@ class Camera:
         self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
         if self.sleep_interval <= 0:
             raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
-        self.camera_type = self._detect_camera_type()
         self.cap = None
         self.picam2 = None
-        self._load_flip_overrides()
 
         threshold_category = self._get_threshold_category(self.motion_threshold)
         logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
+        # Load camera config, fallback to default
+        cam_cfg = config.CAMERA_OVERRIDES.get(camera_key, config.CAMERA_OVERRIDES['default'])
+        self.base_url = cam_cfg.get('url')
+        self.cam_x = cam_cfg.get('cam_width', getattr(config, "CAM_WIDTH", 640))
+        self.cam_y = cam_cfg.get('cam_height', getattr(config, "CAM_HEIGHT", 480))
+        self.hflip = cam_cfg.get('hflip', False)
+        self.vflip = cam_cfg.get('vflip', False)
+
+        # Compose URL with credentials if needed
+        self.camera_url = self._compose_url_with_creds()
+
+        self.camera_type = self._detect_camera_type()
+
         # Initialize hardware
         self._initialize_camera()
+
+        logging.info(f"Camera settings: camera_key={self.camera_key}, type={self.camera_type}, width={self.cam_x}, height={self.cam_y}, hflip={self.hflip}, vflip={self.vflip}")
+
+    def _compose_url_with_creds(self):
+        if not self.base_url:
+            return None
+        # Only add credentials if needed
+        if self.base_url.startswith("rtsp://") or self.base_url.startswith("http://"):
+            user = os.getenv(f"{self.camera_key.upper()}_USER")
+            pw = os.getenv(f"{self.camera_key.upper()}_PASS")
+            if user and pw:
+                # Insert credentials into url after protocol
+                proto, rest = self.base_url.split("://", 1)
+                return f"{proto}://{user}:{pw}@{rest}"
+        return self.base_url
 
     def _get_threshold_category(self, threshold):
         if threshold < 3000:
             return 'low'
-        if threshold < 7000:
+        elif threshold < 7000:
             return 'medium'
-        return 'high'
-
-    def _load_flip_overrides(self):
-        key = str(self.camera_url)
-        override = self.flip_overrides.get(key)
-
-        if not override and self.camera_type == "usb":
-            override = self.flip_overrides.get(f"usb:{self.camera_url}")
-
-        override = override or self.flip_overrides.get("default", {})
-        self.hflip = override.get("hflip", getattr(config, "CAM_HFLIP", False))
-        self.vflip = override.get("vflip", getattr(config, "CAM_VFLIP", False))
-        logging.info(f"Camera flip config: hflip={self.hflip}, vflip={self.vflip}")
+        else:
+            return 'high'
 
     def _detect_camera_type(self):
         if not self.camera_url:
