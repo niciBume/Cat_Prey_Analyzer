@@ -8,6 +8,7 @@ PyYAML>=5.4
 tensorflow>=2.4
 tensorflow-object-detection-api>=0.1.1
 python-dotenv>=0.21.0
+protobuf==3.20.3
 
 # For Raspberry Pi only (optional, can comment out if not needed on x86)
 # picamera2 ; platform_machine == "armv7l" or platform_machine == "aarch64"
