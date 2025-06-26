@@ -96,17 +96,28 @@ except locale.Error:
 # Set to True if this is a dedicated machine for this purpose
 IS_DEDICATED = False
 
-# Camera resolution and image flipping
-CAM_WIDTH = 1920
-CAM_HEIGHT = 1080
-
-# Optional per-source overrides
-CAMERA_FLIP_OVERRIDES = {
-    "http://192.168.1.22:9000/mjpg": {"hflip": True, "vflip": False},
-    "rtsp://192.168.1.59:554/unicast": {"hflip": False, "vflip": False},
-    "rtsp://User_ChangeMe:Password_ChangeMe@192.168.1.58:8554/unicast": {"hflip": False, "vflip": False},
-    "usb:0": {"hflip": False, "vflip": True},  # Simulated USB cam identifier
-    "default": {"hflip": False, "vflip": False}
+# Default camera settings
+CAMERA_OVERRIDES = {
+    "cam1": {
+        "url": "http://192.168.178.22:9000/mjpg",
+        "cam_width": 1600,
+        "cam_height": 900,
+        "hflip": True,
+        "vflip": False
+    },
+    "cam2": {
+        "url": "rtsp://192.168.178.59:8554/unicast",
+        "cam_width": 1920,
+        "cam_height": 1080,
+        "hflip": False,
+        "vflip": False
+    },
+    "default": {
+        "cam_width": 640,
+        "cam_height": 480,
+        "hflip": False,
+        "vflip": False
+    }
 }
 
 # The heartbeat interval
