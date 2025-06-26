@@ -68,13 +68,13 @@ class Camera:
         threshold_category = self._get_threshold_category(self.motion_threshold)
         logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
-        # Load camera config, fallback to default
+        # Load config, fallback to default
         cam_cfg = config.CAMERA_OVERRIDES.get(camera_key, config.CAMERA_OVERRIDES['default'])
         self.base_url = cam_cfg.get('url')
-        self.cam_x = cam_cfg.get('cam_width', getattr(config, "CAM_WIDTH", 640))
-        self.cam_y = cam_cfg.get('cam_height', getattr(config, "CAM_HEIGHT", 480))
-        self.hflip = cam_cfg.get('hflip', False)
-        self.vflip = cam_cfg.get('vflip', False)
+        self.cam_x = cam_cfg.get('cam_width', config.CAMERA_OVERRIDES['default']['cam_width'])
+        self.cam_y = cam_cfg.get('cam_height', config.CAMERA_OVERRIDES['default']['cam_height'])
+        self.hflip = cam_cfg.get('hflip', config.CAMERA_OVERRIDES['default']['hflip'])
+        self.vflip = cam_cfg.get('vflip', config.CAMERA_OVERRIDES['default']['vflip'])
 
         # Compose URL with credentials if needed
         self.camera_url = self._compose_url_with_creds()
@@ -84,7 +84,7 @@ class Camera:
         # Initialize hardware
         self._initialize_camera()
 
-        logging.info(f"Camera settings: camera_key={self.camera_key}, type={self.camera_type}, width={self.cam_x}, height={self.cam_y}, hflip={self.hflip}, vflip={self.vflip}")
+        logging.info(f"Camera settings: camera_key={self.camera_key}, base_url={self.base_url}, type={self.camera_type}, width={self.cam_x}, height={self.cam_y}, hflip={self.hflip}, vflip={self.vflip}")
 
     def _compose_url_with_creds(self):
         if not self.base_url:

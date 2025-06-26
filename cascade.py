@@ -89,8 +89,8 @@ parser.add_argument(
           make sure to define correct settings in the .env file
         """,
         )
-
 args = parser.parse_args()
+
 CAMERA_KEY = args.camera if args.camera else "default"
 BACKEND = args.backend if args.backend else None
 
