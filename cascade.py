@@ -74,15 +74,9 @@ parser.add_argument(
         help="Set the logging level",
         )
 parser.add_argument(
-        '-c', '--camera-url',
+        '-c', '--camera',
         type=str,
-        help="""Set camera input source:
-          - libcamera (DEFAULT fallback, if parameter not set)
-          - MJPEG stream (http://...)
-          - RTSP stream (rtsp://...)
-          - USB webcam (CAMERA_URL is digit)
-          - Video file (if URL is a file, ending in avi/mp4)
-        """,
+        help="Camera key as defined in config.py (e.g., cam1, cam2)"
         )
 parser.add_argument(
         '-b', '--backend',
@@ -97,8 +91,7 @@ parser.add_argument(
         )
 
 args = parser.parse_args()
-if args.camera_url:
-    CAMERA_URL = args.camera_url
+CAMERA_KEY = args.camera if args.camera else "default"
 BACKEND = args.backend if args.backend else None
 
 # Create a RotatingFileHandler
@@ -248,7 +241,7 @@ class Sequential_Cascade_Feeder():
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.max_queue_len = getattr(config, "MAX_QUEUE_LEN", 20)
         self.main_deque = deque(maxlen=self.max_queue_len)
-        self.camera_url = CAMERA_URL
+        self.camera_key = CAMERA_KEY
         self.surepy_client: Optional[Surepy] = None
         self.device_cache: Optional[Flap] = None
         self.surepy_client = None
@@ -642,7 +635,7 @@ class Sequential_Cascade_Feeder():
         #self.single_debug()
 
         # Pass self.main_deque to the camera
-        self.camera = Camera(self.main_deque, self.camera_url, self.shutdown_flag)
+        self.camera = Camera(self.main_deque, self.camera_key, self.shutdown_flag)
 
         self.camera.prefill_queue() # Prefill synchronously
         # Only now start the camera thread and the consumer
