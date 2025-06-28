@@ -17,7 +17,7 @@ Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
   - Pauses/resumes camera queue and manages lock state during catflap operations.
 
 - Startup & Fault Tolerance:
-  - Initializes all components, launches threads for camera and bot.
+  - Initializes all components, launches a process for camera.
   - Monitors and recovers from errors in camera or analysis loops.
 
 - Logging:
@@ -27,18 +27,15 @@ Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
 - This file is the main entry point and nervous system of the analyzer, connecting all subsystems and user interfaces.
 """
 
-import config
-import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio, signal, inspect
-import logging
-from logging.handlers import RotatingFileHandler
-import numpy as np
+import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio, signal, threading, multiprocessing
+import config, logging
+from logging_setup import setup_logging
+import numpy as np, xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime
 from collections import deque
-from threading import Event, Lock, Thread
 from multiprocessing import Process
 from telegram.ext import Updater, CommandHandler
-import xml.etree.ElementTree as ET
 from io import BytesIO
 from typing import Optional, List
 from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
@@ -48,147 +45,128 @@ from surepy.enums import LockState
 from surepy.entities.devices import Flap
 from contextlib import contextmanager
 
-# Set up argument parser
-parser = argparse.ArgumentParser(
-description="""\
-Cat Prey Analyzer - Smart Cat Flap Monitor
+def main():
+    global sq_cascade, bot_instance
+    manager = multiprocessing.Manager()
 
-This tool uses camera input and machine learning to detect
-whether a cat is bringing prey, managing catflap control
-either through the python surepy module or through homeassistant.
-It communicates with the user and can be controlled through telegram app.
+    # Set up argument parser
+    parser = argparse.ArgumentParser(
+    description="""\
+    Cat Prey Analyzer - Smart Cat Flap Monitor
 
-Create a [hidden] .env file containing your secrets and 'source' it before
-firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
-You can also tweak the rest of the values in config.py for better performance.
-""",
-    formatter_class=argparse.RawTextHelpFormatter
-)
+    This tool uses camera input and machine learning to detect
+    whether a cat is bringing prey, managing catflap control
+    either through the python surepy module or through homeassistant.
+    It communicates with the user and can be controlled through telegram app.
 
-CAMERA_URL = None
-parser.add_argument(
-        '-l', '--log',
-        type=str,
-        choices=['info', 'warning', 'error', 'critical', 'debug'],
-        default='INFO',
-        help="Set the logging level",
-        )
-parser.add_argument(
-        '-c', '--camera',
-        type=str,
-        help="Camera key as defined in config.py (e.g., cam1, cam2)"
-        )
-parser.add_argument(
-        '-b', '--backend',
-        type=str,
-        choices= ['surepy', 'ha'],
-        required=False,
-        help="""Force use of one of the following backends for catflap un/locking)
-          - surepy (use surepy module)
-          - ha (use homeassistant REST/Webhook)
-          make sure to define correct settings in the .env file
-        """,
-        )
-args = parser.parse_args()
+    Create a [hidden] .env file containing your secrets and 'source' it before
+    firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
+    You can also tweak the rest of the values in config.py for better performance.
+    """,
+        formatter_class=argparse.RawTextHelpFormatter
+    )
 
-CAMERA_KEY = args.camera if args.camera else "default"
-BACKEND = args.backend if args.backend else None
+    parser.add_argument(
+            '-l', '--log',
+            type=str,
+            choices=['info', 'warning', 'error', 'critical', 'debug'],
+            default='INFO',
+            help="Set the logging level",
+    )
+    parser.add_argument(
+            '-c', '--camera',
+            type=str,
+            help="Camera key as defined in config.py (e.g., cam1, cam2)"
+    )
+    parser.add_argument(
+            '-b', '--backend',
+            type=str,
+            choices= ['surepy', 'ha'],
+            required=False,
+            help="""Force use of one of the following backends for catflap un/locking)
+              - surepy (use surepy module)
+              - ha (use homeassistant REST/Webhook)
+              make sure to define correct settings in the .env file
+            """,
+    )
+    args = parser.parse_args()
 
-# Create a RotatingFileHandler
-log_handler = RotatingFileHandler(
-    config.LOG_FILENAME, maxBytes=config.MAX_LOG_SIZE, backupCount=config.BACKUP_COUNT
-)
+    CAMERA_KEY = args.camera if args.camera else "default"
+    BACKEND = args.backend if args.backend else None
+    log_level_str = args.log.upper()
+    #print(f"LOG LEVEL IN MAIN: {log_level_str}") # DEBUG print
+    setup_logging(
+        config.LOG_FILENAME,
+        config.MAX_LOG_SIZE,
+        config.BACKUP_COUNT,
+        log_level_str=log_level_str
+    )
+    logging.info("MAIN LOGGING STARTED at %s", log_level_str)
+    logging.info("\n\n   ##### Starting CatPreyAnalyzer #####   \n")
 
-# Optional: compress old log files after rotation
-class GzipRotator:
-    def __call__(self, source, dest):
-        with open(source, 'rb') as f_in, gzip.open(dest + '.gz', 'wb') as f_out:
-            shutil.copyfileobj(f_in, f_out)
-        os.remove(source)
+    # ── Helper to know whether to try Surepy at all ──
+    def use_surepy():
+        """Return True if Surepy is configured: device ID and credentials present."""
+        # Always require device ID
+        if not hasattr(config, "SUREPY_DEVICE_ID") or getattr(config, "SUREPY_DEVICE_ID") in (None, "", 0):
+            logging.debug("⚠️  Surepy config missing or empty SUREPY_DEVICE_ID")
+            logging.info("⚠️  Surepy module NOT available!")
+            return False
 
-log_handler.rotator = GzipRotator()
-log_handler.namer = lambda name: name
+        # Require either token, or both email and password
+        has_token = hasattr(config, "SUREPY_TOKEN") and getattr(config, "SUREPY_TOKEN") not in (None, "", 0)
+        has_email = hasattr(config, "SUREPY_EMAIL") and getattr(config, "SUREPY_EMAIL") not in (None, "", 0)
+        has_password = hasattr(config, "SUREPY_PASSWORD") and getattr(config, "SUREPY_PASSWORD") not in (None, "", 0)
 
-# Set format and log level
-formatter = logging.Formatter('%(asctime)s [%(levelname)s]: %(message)s',
-                              datefmt='%x-%X')
-log_handler.setFormatter(formatter)
+        if not (has_token or (has_email and has_password)):
+            logging.debug(
+                "⚠️  Surepy not available, config requires either SUREPY_TOKEN, or both SUREPY_EMAIL and SUREPY_PASSWORD"
+            )
+            logging.info("⚠️  Surepy module NOT available!")
+            return False
+        logging.info("ℹ️  Surepy module available.")
+        return True
 
-# Apply to root logger
-logger = logging.getLogger()
+    # ── Helper to know whether to try HA at all ──
+    def use_ha():
+        """Return True if all HA config attributes are set (not None, empty, or zero)."""
+        has_webhook = hasattr(config, "HA_WEBHOOK") and getattr(config, "HA_WEBHOOK") not in (None, "", 0)
+        has_rest_url = hasattr(config, "HA_REST_URL") and getattr(config, "HA_REST_URL") not in (None, "", 0)
+        has_rest_token = hasattr(config, "HA_REST_TOKEN") and getattr(config, "HA_REST_TOKEN") not in (None, "", 0)
 
-# Parse log level dynamically from --log
-log_level_str = args.log.upper()
-log_level = getattr(logging, log_level_str, None)
-if not isinstance(log_level, int):
-    raise ValueError(f"Invalid log level: {args.log}")
-logger.setLevel(log_level)
+        if not (has_webhook and has_rest_url and has_rest_token):
+            logging.debug("⚠️  Some HA config attributes are not set or empty.")
+            logging.info("⚠️  HA module NOT available!")
+            return False
+        logging.info("ℹ️  HA webhook available.")
+        return True
 
-logger.addHandler(log_handler)
+    use_surepy = use_surepy()
+    use_ha = use_ha()
+    use_surepet = False
+    if BACKEND == "surepy" and use_surepy:
+        logging.info("ℹ️  Using surepy module for un/locking.")
+        use_surepet = "surepy"
+    if BACKEND == "ha" and use_ha:
+        logging.info("ℹ️  Using HA webhook for un/locking.")
+        use_surepet = "ha"
+    if BACKEND is None:
+        use_surepet = use_surepy or use_ha
+    logging.debug(f"use_surepet={use_surepet}")
 
-logging.info("\n\n   ##### Starting CatPreyAnalyzer #####   \n")
-logging.info("Configured logging.")
-logging.info(f"  Rotating log when it grows bigger than {config.MAX_LOG_SIZE/1024/1024} MB")
+    cat_cam_py = str(Path(os.getcwd()).parents[0])
+    logging.debug(f"CatCamPy: {cat_cam_py}")
+    logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
 
-if CAMERA_URL:
-    logging.info(f"Using following CAMERA_URL: {CAMERA_URL}")
+    sq_cascade = Sequential_Cascade_Feeder(manager, CAMERA_KEY, use_surepy, use_ha, use_surepet, log_level_str)
+    bot_instance = sq_cascade.bot
 
-sq_cascade = None
-bot_instance = None
-
-# ── Helper to know whether to try Surepy at all ──
-def use_surepy():
-    """Return True if Surepy is configured: device ID and credentials present."""
-    # Always require device ID
-    if not hasattr(config, "SUREPY_DEVICE_ID") or getattr(config, "SUREPY_DEVICE_ID") in (None, "", 0):
-        logging.debug("⚠️  Surepy config missing or empty SUREPY_DEVICE_ID")
-        logging.info("⚠️  Surepy module NOT available!")
-        return False
-
-    # Require either token, or both email and password
-    has_token = hasattr(config, "SUREPY_TOKEN") and getattr(config, "SUREPY_TOKEN") not in (None, "", 0)
-    has_email = hasattr(config, "SUREPY_EMAIL") and getattr(config, "SUREPY_EMAIL") not in (None, "", 0)
-    has_password = hasattr(config, "SUREPY_PASSWORD") and getattr(config, "SUREPY_PASSWORD") not in (None, "", 0)
-
-    if not (has_token or (has_email and has_password)):
-        logging.debug(
-            "⚠️  Surepy not available, config requires either SUREPY_TOKEN, or both SUREPY_EMAIL and SUREPY_PASSWORD"
-        )
-        logging.info("⚠️  Surepy module NOT available!")
-        return False
-    logging.info("ℹ️  Surepy module available.")
-    return True
-
-# ── Helper to know whether to try HA at all ──
-def use_ha():
-    """Return True if all HA config attributes are set (not None, empty, or zero)."""
-    has_webhook = hasattr(config, "HA_WEBHOOK") and getattr(config, "HA_WEBHOOK") not in (None, "", 0)
-    has_rest_url = hasattr(config, "HA_REST_URL") and getattr(config, "HA_REST_URL") not in (None, "", 0)
-    has_rest_token = hasattr(config, "HA_REST_TOKEN") and getattr(config, "HA_REST_TOKEN") not in (None, "", 0)
-
-    if not (has_webhook and has_rest_url and has_rest_token):
-        logging.debug("⚠️  Some HA config attributes are not set or empty.")
-        logging.info("⚠️  HA module NOT available!")
-        return False
-    logging.info("ℹ️  HA webhook available.")
-    return True
-
-use_surepy = use_surepy()
-use_ha = use_ha()
-use_surepet = False
-if BACKEND == "surepy" and use_surepy:
-    logging.info("ℹ️  Using surepy module for un/locking.")
-    use_surepet = "surepy"
-if BACKEND == "ha" and use_ha:
-    logging.info("ℹ️  Using HA webhook for un/locking.")
-    use_surepet = "ha"
-if BACKEND is None:
-    use_surepet = use_surepy or use_ha
-logging.debug(f"use_surepet={use_surepet}")
-
-cat_cam_py = str(Path(os.getcwd()).parents[0])
-logging.debug(f"CatCamPy: {cat_cam_py}")
-logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
+    try:
+        sq_cascade.queue_handler()
+    except Exception as e:
+        print(f"Exception in main: {type(e).__name__}: {e}")
+        import traceback; traceback.print_exc()
+        handle_exit(exc=e)
 
 @contextmanager
 def suppress_stdout_stderr():
@@ -213,10 +191,37 @@ def suppress_stdout_stderr():
             os.close(old_stdout_fileno)
             os.close(old_stderr_fileno)
 
+def camera_process_entry(main_deque, camera_key, shutdown_flag, pause_event, pause_duration, log_level_str):
+    import signal
+    from camera_class import Camera
+    #print(f"LOG LEVEL IN CAMERA PROC: {log_level_str}") # DEBUG print
+    signal.signal(signal.SIGINT, signal.SIG_IGN)
+
+    setup_logging(
+        config.LOG_FILENAME,
+        config.MAX_LOG_SIZE,
+        config.BACKUP_COUNT,
+        log_level_str=log_level_str
+    )
+    logging.info("CAMERA PROC LOGGING STARTED at %s", log_level_str)
+
+    cam = Camera(main_deque, camera_key, shutdown_flag, pause_event=pause_event, pause_duration=pause_duration, log_level_str=log_level_str)
+    cam.start_hardware()
+    cam.main_capture_loop()
+
 class Sequential_Cascade_Feeder():
-    def __init__(self):
+    def __init__(self, manager, camera_key, use_surepy, use_ha, use_surepet, log_level_str):
+        self.manager = manager
+        self.main_deque = self.manager.list()
+        self.shutdown_flag = self.manager.Event()
+        self.pause_event = multiprocessing.Event()
+        self.pause_duration = multiprocessing.Value('d', 0.0)
+        self.camera_key = camera_key
+        self.use_surepy = use_surepy
+        self.use_ha = use_ha
+        self.use_surepet = use_surepet
+        self.camera_process = None
         self.log_dir = os.path.join(os.getcwd(), 'log')
-        logging.debug(f"Log Dir: {self.log_dir}")
         self.event_nr = 0
         self.base_cascade = Cascade()
         self.MAX_PROCESSES = 7
@@ -240,24 +245,20 @@ class Sequential_Cascade_Feeder():
         self.open_time = getattr(config, "OPEN_TIME", 60)
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.max_queue_len = getattr(config, "MAX_QUEUE_LEN", 20)
-        self.main_deque = deque(maxlen=self.max_queue_len)
-        self.camera_key = CAMERA_KEY
         self.surepy_client: Optional[Surepy] = None
         self.device_cache: Optional[Flap] = None
         self.surepy_client = None
-        self.use_surepy = use_surepy
-        self.use_ha = use_ha
-        self.use_surepet = use_surepet
         self.last_unlock_method = None  # "surepy" or "ha"
         self.last_unlock_state = None   # e.g., "locked_all" or "locked_out"
-        self.shutdown_flag = Event()
+        logging.debug(f"Log Dir: {self.log_dir}")
+        self.log_level_str = log_level_str
 
-    def pause_camera(self):
-        if hasattr(self, "camera"):
-            with self.camera._pause_lock:
-                self.camera.pause_duration = max(0.0, float(self.open_time - 1))
-                logging.debug(f"ℹ️  Pausing camera queue for {self.camera.pause_duration:.2f}s")
-            self.camera.pause_event.set()
+    def pause_camera(self, open_time):
+        if self.camera_process is not None and self.camera_process.is_alive():
+            with self.pause_duration.get_lock():
+                self.pause_duration.value = max(0.0, float(open_time - 1))
+            logging.info(f"Pausing camera for {self.pause_duration.value} seconds")
+            self.pause_event.set()
 
     # ── Retry wrapper for async Surepy calls ──
     async def try_surepy_with_retries(self, coro_fn, description, retries=2, delay=2):
@@ -305,38 +306,67 @@ class Sequential_Cascade_Feeder():
         return False
 
     def relock_catflap_on_exit(self):
+        """Attempt to relock the catflap when shutting down, synchronously if possible."""
         if self.last_unlock_method == "surepy":
             coro = self.set_catflap_lock_state_surepy(self.last_unlock_state)
             try:
+                # Try to run the coroutine in a new event loop (preferred for shutdown)
                 asyncio.run(coro)
-                print(f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit.")
-                self.bot.send_text(f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit.")
-            except RuntimeError:
-                # Already running loop, so use current loop
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # If the loop is already running (common in async apps), schedule and return,
-                    # but we can't block for completion here, so we must just fire-and-forget.
-                    task = loop.create_task(coro)
-                    # Optionally, add a callback to log completion or errors.
-                    task.add_done_callback(
-                        lambda t: print(f"Catflap relock finished with result: {t.result() if not t.exception() else t.exception()}")
-                    )
-                else:
-                    loop.run_until_complete(coro)
-                    print(f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit (event loop fallback).")
-                    self.bot.send_text(f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit (event loop fallback).")
+                msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit."
+                print(msg)
+                self.bot.send_text(msg)
+            except RuntimeError as e:
+                # This happens if we're already in an event loop (common in some contexts)
+                try:
+                    loop = asyncio.get_event_loop()
+                    if loop.is_running():
+                        # Fire-and-forget, but log result when done
+                        task = loop.create_task(coro)
+                        def on_done(t):
+                            try:
+                                result = t.result()
+                                msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit (async task)."
+                            except Exception as ex:
+                                msg = f"❌ Catflap relock failed via Surepy on exit: {ex}"
+                            print(msg)
+                            try:
+                                self.bot.send_text(msg)
+                            except Exception:
+                                pass
+                        task.add_done_callback(on_done)
+                    else:
+                        loop.run_until_complete(coro)
+                        msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit (event loop fallback)."
+                        print(msg)
+                        self.bot.send_text(msg)
+                except Exception as ex:
+                    msg = f"❌ Catflap relock failed via Surepy on exit (event loop error): {ex}"
+                    print(msg)
+                    try:
+                        self.bot.send_text(msg)
+                    except Exception:
+                        pass
 
         elif self.last_unlock_method == "ha":
             try:
                 self.try_post_with_retries(config.HA_WEBHOOK, self.last_unlock_state, f"Re-lock catflap to [{self.last_unlock_state}]")
-                print(f"🔒 Catflap re-locked to [{self.last_unlock_state}] via HA on exit.")
-                self.bot.send_text(f"🔒 Catflap re-locked to [{self.last_unlock_state}] via HA on exit.")
+                msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via HA on exit."
+                print(msg)
+                self.bot.send_text(msg)
             except Exception as e:
-                print(f"❌ Failed to re-lock via HA on exit")
+                msg = f"❌ Failed to re-lock via HA on exit: {e}"
+                print(msg)
+                try:
+                    self.bot.send_text(msg)
+                except Exception:
+                    pass
         else:
-            print("ℹ️  No catflap unlock detected, skipping re-lock on exit.")
-            self.bot.send_text("ℹ️  No catflap unlock detected, skipping re-lock on exit.")
+            msg = "ℹ️  No catflap unlock detected, skipping re-lock on exit."
+            print(msg)
+            try:
+                self.bot.send_text(msg)
+            except Exception:
+                pass
 
     # ── Home Assistant flow ──
     def ha_flow(self):
@@ -364,7 +394,7 @@ class Sequential_Cascade_Feeder():
         open_states = {"unlocked", "locked_in"}
         if ha_state in open_states:
             self.bot.send_text(f"ℹ️  Catflap already open inwards: [{ha_state}]")
-            return True  # Nothing to do, treat as success
+            return True
 
         closed_states = {"locked_out", "locked_all"}
         if ha_state in closed_states:
@@ -372,7 +402,7 @@ class Sequential_Cascade_Feeder():
             self.last_unlock_state = ha_state  # Save the state to restore
             if self.try_post_with_retries(config.HA_WEBHOOK, "unlocked", "Unlock catflap"):
                 self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {self.open_time}s.")
-                self.pause_camera()
+                self.pause_camera(self.open_time)
                 time.sleep(self.open_time)
                 if self.try_post_with_retries(config.HA_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}]"):
                     self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{ha_state}].")
@@ -399,7 +429,7 @@ class Sequential_Cascade_Feeder():
         open_states = {"unlocked", "locked_in"}
         if state in open_states:
             self.bot.send_text(f"ℹ️  Catflap already open inwards: [{state}]")
-            return True  # Consider this a success, nothing to do
+            return True
 
         closed_states = {"locked_out", "locked_all"}
         if state in closed_states:
@@ -410,7 +440,7 @@ class Sequential_Cascade_Feeder():
                 return await self.set_catflap_lock_state_surepy("unlocked")
             if await self.try_surepy_with_retries(unlock_fn, "Unlock catflap via Surepy"):
                 self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking for {self.open_time}s.")
-                self.pause_camera()
+                self.pause_camera(self.open_time)
                 await asyncio.sleep(self.open_time)
                 # Restore original state with retries
                 async def relock_fn():
@@ -428,7 +458,7 @@ class Sequential_Cascade_Feeder():
             self.bot.send_text(f"⚠️  Unknown Sure Petcare catflap state: [{state}]")
             return False
 
-    def control_catflap(self):
+    def open_catflap(self):
         if self.use_surepet != "ha" and self.use_surepy:
             result = asyncio.run(self.surepy_flow())
             if not result:
@@ -537,7 +567,7 @@ class Sequential_Cascade_Feeder():
 
         self.event_objects.clear()
         self.queues_cumuli_in_event.clear()
-        self.main_deque.clear()
+        self.main_deque[:] = []
 
         #terminate processes when pool too large
         if len(self.processing_pool) >= self.MAX_PROCESSES:
@@ -631,45 +661,44 @@ class Sequential_Cascade_Feeder():
         return imgNr
 
     def queue_handler(self):
-        # Do this to force run all networks s.t. the network inference time stabilizes
-        #self.single_debug()
-
-        # Pass self.main_deque to the camera
-        self.camera = Camera(self.main_deque, self.camera_key, self.shutdown_flag)
-
-        self.camera.prefill_queue() # Prefill synchronously
-        # Only now start the camera thread and the consumer
-        self.camera_thread = Thread(target=self.camera.main_capture_loop, daemon=True)
-        self.camera_thread.start()
+        # Prefill and start camera process
+        self.camera_process = multiprocessing.Process(
+            target=camera_process_entry,
+            args=(self.main_deque, self.camera_key, self.shutdown_flag, self.pause_event, self.pause_duration, self.log_level_str),
+            daemon=True
+        )
+        self.camera_process.start()
         self.bot.send_text("ℹ️  Starting camera loop")
+        logging.info("ℹ️  Starting camera loop")
 
         try:
             while not self.shutdown_flag.is_set():
-                if len(self.main_deque) > self.fps_offset:
-                    logging.debug(f"Deque type: {type(self.main_deque)}, ID={id(self.main_deque)}, maxlen={self.main_deque.maxlen}, current len={len(self.main_deque)}")
-                    self.queue_worker()
-                else:
-                    #logging.debug(f"Nothing to work with => Queue_length: {len(self.main_deque)}")
-                    time.sleep(0.05)
-
-                # Check if user force opens the door
-                if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
-                    if use_surepet:
-                        logging.info("Opening flap..")
-                        self.bot.send_text("ℹ️  Opening flap..")
-                        self.control_catflap()
+                try:
+                    if len(self.main_deque) > self.fps_offset:
+                        logging.debug(f"Deque type: {type(self.main_deque)}, ID={id(self.main_deque)}, max_queue_len={self.max_queue_len}, current len={len(self.main_deque)}")
+                        self.queue_worker()
                     else:
-                        self.bot.send_text("ℹ️  No backend available to open the catflap.")
-                        logging.info("ℹ️  No backend available to open the catflap.")
-                    self.reset_cumuli_et_al()
+                        time.sleep(0.05)
+
+                    # Check if user force opens the door
+                    if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
+                        if self.use_surepet:
+                            logging.info(f"Opening flap for {self.open_time}s")
+                            self.bot.send_text(f"ℹ️  Opening flap for {self.open_time}s")
+                            self.open_catflap()
+                        else:
+                            logging.info("ℹ️  No backend available to open the catflap.")
+                            self.bot.send_text("ℹ️  No backend available to open the catflap.")
+                        self.reset_cumuli_et_al()
+
+                except Exception as e:
+                    logging.error(f"Queue handler inner exception: {e}")
+                    # Optionally, notify bot or take other action
+                    break  # Exit main loop on internal error
 
         except Exception as e:
-            logging.error(f"Queue handler exception: {e}")
-            raise
-        finally:
-            self.bot.send_text("ℹ️  Shutting down camera loop")
-            self.shutdown_flag.set()
-            self.camera_thread.join(timeout=2)
+            logging.error(f"Queue handler outer exception: {e}")
+            raise  # Let your global error handler deal with this
 
     def queue_worker(self):
         logging.debug(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
@@ -698,7 +727,7 @@ class Sequential_Cascade_Feeder():
         # Always delete the left part
         for _ in range(self.fps_offset + 1):
             if self.main_deque:
-                self.main_deque.popleft()
+                del self.main_deque[0]
                 logging.debug(f"Dequeued frame, queue length now: {len(self.main_deque)}")
 
         if cascade_obj.cc_cat_bool == True:
@@ -1158,6 +1187,15 @@ class NodeBot():
     def send_text(self, message):
         telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
 
+    def shutdown_bot(self):
+        try:
+            print("Stopping Telegram bot updater...")
+            self.bot_updater.stop()
+            self.bot_updater.is_idle = False   # For some versions, ensures exit
+            print("Bot updater stopped.")
+        except Exception as e:
+            print(f"Failed to stop bot cleanly: {e}")
+
 class DummyDQueue():
     def __init__(self):
         self.target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
@@ -1219,48 +1257,62 @@ class Spec_Event_Handler():
             #cv2.imwrite(os.path.join(self.out_dir, single_cascade.img_name), single_cascade.output_img)
             self.log_to_csv(img_event_obj=single_cascade)
 
-sq_cascade = Sequential_Cascade_Feeder()
-bot_instance = sq_cascade.bot
+# Prevent multiple shutdowns
+shutting_down = threading.Event()
+sq_cascade = None
+bot_instance = None
 
-def handle_exit(signum, frame):
-    print(f"Received signal {signum}, shutting down cleanly...")
+def handle_exit(signum=None, frame=None, exc=None):
+    global sq_cascade, bot_instance
+    if shutting_down.is_set():
+        print("Shutdown already in progress, ignoring signal/exception.")
+        return
+    shutting_down.set()
+    print(f"Received signal {signum if signum else 'exception'}, shutting down cleanly...")
+    bot_instance.send_text(f"Received signal {signum if signum else 'exception'}, shutting down cleanly...")
+
+    # Always relock catflap
     try:
-        if bot_instance is not None:
-            bot_instance.send_text(f"⚠️  CatPreyAnalyzer received signal {signum} (e.g. CTRL+C); shutting down cleanly…")
-        if sq_cascade is not None:
-            sq_cascade.shutdown_flag.set()
-            if hasattr(sq_cascade, "camera") and hasattr(sq_cascade.camera, "cap"):
-                try:
-                    sq_cascade.camera.cap.release()
-                    print("Released camera capture resource.")
-                except Exception as e:
-                    print(f"Failed to release camera: {e}")
-            if hasattr(sq_cascade, "camera_thread"):
-                print("Waiting for camera thread to exit...")
-                sq_cascade.camera_thread.join(timeout=2)
-                if sq_cascade.camera_thread.is_alive():
-                    print("Camera thread did not exit, forcing shutdown.")
-            sq_cascade.relock_catflap_on_exit()
+        sq_cascade.relock_catflap_on_exit()
     except Exception as e:
-        print(f"Failed to notify bot or relock catflap on exit: {e}")
-    time.sleep(1)
-    sys.exit(0)
+        print(f"Failed to relock catflap: {e}")
+
+    # Stop the bot cleanly
+    try:
+        if bot_instance:
+            bot_instance.shutdown_bot()
+            print(f"Stopped bot")
+    except Exception as e:
+        print(f"Failed to stop bot: {e}")
+
+    # Shutdown camera process first
+    if sq_cascade and sq_cascade.camera_process is not None:
+        try:
+            print("Setting shutdown flag...")
+            sq_cascade.shutdown_flag.set()
+            sq_cascade.camera_process.join(timeout=3)
+            if sq_cascade.camera_process.is_alive():
+                print("Camera process did not exit, terminating...")
+                print("Live threads:", threading.enumerate())
+                sq_cascade.camera_process.terminate()
+                sq_cascade.camera_process.join(timeout=3)
+                if sq_cascade.camera_process.is_alive():
+                    print("Camera process still alive after terminate(). Giving up and continuing shutdown.")
+                    print("Camera process still alive, killing with SIGKILL")
+                    os.kill(self.camera_process.pid, signal.SIGKILL)
+                    self.camera_process.join()
+        except Exception as e:
+            print(f"Error shutting down camera process: {e}")
+
+    time.sleep(0.25)
+    print("Exiting main process (forced).")
+    try:
+        sys.exit(0)
+    except Exception:
+        os._exit(0)
 
 if __name__ == '__main__':
     signal.signal(signal.SIGINT, handle_exit)
     signal.signal(signal.SIGTERM, handle_exit)
-    try:
-        sq_cascade.queue_handler()
-    except Exception as e:
-        if asyncio.iscoroutine(e):
-            print("CAUGHT COROUTINE IN EXCEPTION HANDLER!", e)
-            bot_instance.send_text("❗ Coroutine object was caught as Exception in shutdown handler!")
-        if bot_instance is not None:
-            bot_instance.send_text(f"❌ Unhandled exception: {e}")
-        print(f"Unhandled exception: {e}")
-        sq_cascade.shutdown_flag.set()
-        # Wait for camera thread, if present
-        if hasattr(sq_cascade, "camera_thread"):
-            sq_cascade.camera_thread.join(timeout=2)
-        sq_cascade.relock_catflap_on_exit()
-        sys.exit(1)
+    multiprocessing.set_start_method('spawn', force=True)
+    main()
