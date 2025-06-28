@@ -450,7 +450,7 @@ class Sequential_Cascade_Feeder():
             async def unlock_fn():
                 return await self.set_catflap_lock_state_surepy("unlocked")
             if await self.try_surepy_with_retries(unlock_fn, "Unlock catflap via Surepy"):
-                self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking for {self.open_time}s.")
+                self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking catflap for {self.open_time}s.")
                 self.pause_camera(self.open_time)
                 await asyncio.sleep(self.open_time)
                 # Restore original state with retries
@@ -689,11 +689,9 @@ class Sequential_Cascade_Feeder():
                     else:
                         time.sleep(0.05)
 
-                    # Check if user force opens the door
+                    # Check if user force opens the door or cat is clean
                     if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
                         if self.use_surepet:
-                            logging.info(f"Opening flap for {self.open_time}s")
-                            self.bot.send_text(f"ℹ️  Opening flap for {self.open_time}s")
                             self.open_catflap()
                         else:
                             logging.info("ℹ️  No backend available to open the catflap.")
