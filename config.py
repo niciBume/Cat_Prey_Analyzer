@@ -25,7 +25,8 @@ Notes:
     - Safe starting values are provided; tune for your hardware/environment.
 """
 
-import os, locale
+import os
+import locale
 from dotenv import load_dotenv
 try:
     import pytz
