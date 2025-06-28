@@ -1,25 +1,28 @@
 # config.py
 
 """
-Cat Prey Analyzer - Configuration Logic Summary
+Cat Prey Analyzer - Centralized Configuration
 
-- Central configuration for all runtime parameters and user-adjustable settings.
-  - Camera parameters: type, resolution, frame rate, flip options, etc.
-  - Motion detection: thresholds, queue lengths, analysis intervals.
-  - Integration: Telegram bot tokens, Sure Petcare credentials, Home Assistant endpoints.
-  - Paths: Data/log storage, timezone, debug flags, and feature toggles.
+Purpose:
+    - Houses all runtime parameters, integrations, and user-tunable settings.
+    - Ensures all modules use consistent configuration for camera, analysis, integration, and logging.
 
-- Usage:
-  - All core modules import settings from this file for consistent behavior.
-  - Changing system behavior (e.g., switching camera, updating credentials) is done here, not in code logic.
+Configuration Areas:
+    - Camera: Source (USB, RTSP, etc.), resolution, FPS, flip, queue size, heartbeat interval, etc.
+    - Detection: Motion sensitivity, frame analysis parameters, event thresholds.
+    - Integrations: Telegram bot (chat ID, token), Sure Petcare (Surepy) credentials, Home Assistant endpoints.
+    - Logging: Path, rotation, retention, and log verbosity.
+    - Paths: Data/log directories, timezone, debug flags, feature toggles.
 
-- Special Logic:
-  - Defensive defaults for missing configuration.
-  - Conversion/validation for environment variables and sensitive secrets.
-  - Optionally loads secrets from environment or .env files for security.
+Best Practices:
+    - Edit this file for most behavior changes (camera, detection, integrations).
+    - Use environment variables or a .env file for secrets (tokens/passwords).
+    - Defensive defaults and validation included.
+    - Read this file for descriptions on how to tune detection aggressiveness, enable integrations, or modify system behavior.
 
-- Edit this file to tune detection sensitivity, enable/disable integrations, or change bot/camera behavior.
-  The used values are a safe starting point, tune to your own liking (depending on your hardware).
+Notes:
+    - All other modules import from here for consistency.
+    - Safe starting values are provided; tune for your hardware/environment.
 """
 
 import os, locale

@@ -1,3 +1,25 @@
+# logging_setup.py
+"""
+Cat Prey Analyzer - Logging Setup Utility
+
+Purpose:
+    - Sets up robust, rotating logging for all processes (main and subprocesses).
+    - Ensures consistent format and log levels across modules.
+
+Features:
+    - Rotating log file with size and backup retention.
+    - Automatic gzip compression of rotated logs.
+    - Cleans up previous handlers to avoid duplicate logging.
+    - Configurable log level and format.
+
+Usage:
+    - Call setup_logging() at process startup (see cascade.py and camera_class.py).
+    - Logging settings (file, size, retention) are controlled via config.py.
+
+Author:
+    github.com/netphantm
+"""
+
 import logging
 from logging.handlers import RotatingFileHandler
 import os, gzip, shutil

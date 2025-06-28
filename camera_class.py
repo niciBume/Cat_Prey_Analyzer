@@ -1,29 +1,29 @@
 # camera_class.py
 
 """
-Cat Prey Analyzer - Camera and Frame Queue Logic Summary
+Cat Prey Analyzer - Camera Acquisition & Frame Queue Logic
 
-- Purpose:
-  - Handles all camera hardware interaction, frame acquisition, and queueing for downstream analysis.
-  - Implements motion detection and periodic/heartbeat frame capture in a single threaded loop.
-  - Feeds frames to the main analysis pipeline via a thread-safe queue.
+Purpose:
+    - Handles all camera hardware interaction, frame acquisition, and buffering for downstream analysis.
+    - Implements motion detection and periodic (heartbeat) frame capture in a robust, pause-aware loop.
+    - Supplies frames to the main analysis pipeline via a thread/process-safe queue.
 
-- Queueing Logic:
-  - Main loop (fill_queue) captures frames, detects motion, and enqueues frames on motion events.
-  - Periodic/heartbeat logic: If no motion for a configurable interval, enqueues a frame to ensure recency ("heartbeat").
-  - Queue is pre-filled at startup to ensure immediate availability to consumers (e.g., bot requests).
-  - Pausing/resuming: Queue can be paused and cleared on system or user command.
+Features:
+    - Motion-triggered frame capture with user-configurable sensitivity (motion threshold).
+    - Heartbeat capture: Ensures a fresh frame is queued even in absence of motion.
+    - Queue pre-fill on startup for zero-latency user requests.
+    - Pausing: Can pause and clear the frame queue on system/user command (e.g., during catflap opening).
+    - Multi-camera support: USB cams, PiCam (libcamera), RTSP/MJPEG/IP cams, and local video files.
+    - Orientation and error handling: Flip, restart, and recover on camera errors.
+    - Detailed logging of all capture, queue, and motion events.
 
-- Camera Support:
-  - Supports multiple camera types (USB, PiCam via libcamera, etc.).
-  - Handles orientation (horizontal/vertical flip), error recovery, and camera restarts.
-  - Converts frames to grayscale for efficient motion detection.
+Integration:
+    - Intended to run as a subprocess, controlled by the main cascade.py.
+    - Receives inter-process signals/events for pausing and shutdown.
 
-- Logging:
-  - Logs frame capture, queue events, motion detection, and heartbeat actions.
-  - Warnings for dropped frames, errors for camera failures and exceptions.
-
-- All queuing and acquisition logic is centralized here, ensuring reliable and recent images for analysis and user requests.
+How to Tune:
+    - Adjust motion sensitivity, heartbeat interval, and queue size in config.py.
+    - Camera selection and overrides via CAMERA_OVERRIDES in config.py.
 """
 
 import os
@@ -68,8 +68,7 @@ class Camera:
             raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
         self.cap = None
         self.picam2 = None
-        threshold_category = 'low' if threshold < 3000 else 'medium' if threshold < 7000 else 'high'
-
+        threshold_category = 'low' if self.motion_threshold < 3000 else 'medium' if self.motion_threshold < 7000 else 'high'
         logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
         # Load config, fallback to default
@@ -85,9 +84,6 @@ class Camera:
         self.camera_type = self._detect_camera_type()
         logging.info(f"Camera settings: camera_key={self.camera_key}, base_url={self.base_url}, type={self.camera_type}, width={self.cam_x}, height={self.cam_y}, hflip={self.hflip}, vflip={self.vflip}")
 
-    def start_hardware(self):
-        self._initialize_camera()
-
     def _compose_url_with_creds(self):
         if not self.base_url:
             return None
@@ -100,6 +96,9 @@ class Camera:
                 proto, rest = self.base_url.split("://", 1)
                 return f"{proto}://{user}:{pw}@{rest}"
         return self.base_url
+
+    def start_hardware(self):
+        self._initialize_camera()
 
     def _detect_camera_type(self):
         if not self.camera_url:
@@ -164,8 +163,6 @@ class Camera:
                     raise RuntimeError(f"Failed to initialize camera after {self.max_restart_attempts} attempts")
             else:
                 logging.debug(f"Video stream {self.camera_type} opened successfully with: {self.camera_url}.")
-                #fps_reported = self.cap.get(cv2.CAP_PROP_FPS)
-                #logging.debug(f"Camera FPS (reported): {fps_reported:.2f}")
 
     def _restart_camera(self):
         logging.warning("Restarting camera...")

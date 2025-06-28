@@ -1,30 +1,37 @@
 # cascade.py
 
 """
-Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
+Cat Prey Analyzer - Main Orchestration & Analysis Pipeline (Entry Point)
 
-- Core Controller:
-  - Orchestrates camera acquisition, frame analysis, event detection, and bot/user integration.
-  - Manages the main queue handler, which processes frames as they become available from the camera queue.
-  - Runs detection algorithms (e.g., prey detection, cat recognition) and triggers corresponding actions or notifications.
+Overview:
+    - Central controller for cat prey detection, event analysis, and user/system integration.
+    - Responsible for initializing, coordinating, and monitoring all subsystems (camera, detection, bot, and catflap control).
 
-- Bot Integration:
-  - Handles Telegram (or other) bot commands, such as `/sendlivepic`, status queries, and user-initiated actions.
-  - Pulls latest frames from the main queue for live image requests, ensuring frames are always recent due to camera_class logic.
+Key Responsibilities:
+    - Camera Orchestration:
+        - Spawns and manages a separate process for camera acquisition and frame queueing.
+        - Pauses/resumes frame queue during catflap open/close events to avoid false positives.
+    - Frame Analysis Pipeline:
+        - Processes frames for cat and prey detection (multi-stage ML analysis).
+        - Aggregates events and infers outcomes via cascaded models.
+    - Bot & User Integration:
+        - Integrates with Telegram for real-time commands, notifications, and photo requests.
+        - Handles user commands (e.g. /sendlivepic, /nodestatus, /letin) and system alerts.
+    - Catflap & Peripheral Control:
+        - Integrates with Sure Petcare (Surepy) and/or Home Assistant for smart catflap locking/unlocking.
+        - Safely manages lock state, with retries and fallback, including automatic relocking after open period.
+    - Logging, Error Handling, and Fault Tolerance:
+        - Centralized, rotating logging for all major system events.
+        - Monitors and recovers from errors in camera or analysis subsystems.
+        - Reports status and faults to users via bot.
+    - Configuration and Startup:
+        - Loads settings from config.py and environment.
+        - Supports command-line args for log level, camera selection, and backend override.
 
-- Catflap & Peripheral Control:
-  - Integrates with Sure Petcare (Surepy) and/or Home Assistant for smart catflap control.
-  - Pauses/resumes camera queue and manages lock state during catflap operations.
-
-- Startup & Fault Tolerance:
-  - Initializes all components, launches a process for camera.
-  - Monitors and recovers from errors in camera or analysis loops.
-
-- Logging:
-  - Provides info, warning, and error logs for all major operations.
-  - Reports status to the bot for user transparency.
-
-- This file is the main entry point and nervous system of the analyzer, connecting all subsystems and user interfaces.
+Notes:
+    - This is the main entry point. All subsystems are initialized and connected here.
+    - For secrets, use a .env file or environment variables for credentials and tokens.
+    - For tuning detection and performance, edit config.py.
 """
 
 import sys
