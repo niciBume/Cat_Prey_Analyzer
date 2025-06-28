@@ -27,13 +27,25 @@ Cat Prey Analyzer - Main Application Orchestration and Analysis Pipeline
 - This file is the main entry point and nervous system of the analyzer, connecting all subsystems and user interfaces.
 """
 
-import sys, gzip, shutil, os, cv2, time, csv, telegram, requests, argparse, asyncio, signal, threading, multiprocessing
-import config, logging
+import sys
+import os
+import cv2
+import time
+import csv
+import telegram
+import requests
+import argparse
+import asyncio
+import signal
+import threading
+import multiprocessing
+import config
+import logging
+import numpy as np
+import xml.etree.ElementTree as ET
 from logging_setup import setup_logging
-import numpy as np, xml.etree.ElementTree as ET
 from pathlib import Path
 from datetime import datetime
-from collections import deque
 from multiprocessing import Process
 from telegram.ext import Updater, CommandHandler
 from io import BytesIO
@@ -41,12 +53,11 @@ from typing import Optional, List
 from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
 from camera_class import Camera
 from surepy import Surepy
-from surepy.enums import LockState
 from surepy.entities.devices import Flap
 from contextlib import contextmanager
 
 def main():
-    global sq_cascade, bot_instance
+    global sq_cascade, bot_instance, cat_cam_py
     manager = multiprocessing.Manager()
 
     # Set up argument parser
@@ -469,7 +480,9 @@ class Sequential_Cascade_Feeder():
             if not result:
                 logging.error("❌ Using HA to unlock catflap failed!")
             return result
-        return False
+        else:
+            logging.error("⚠️  No backend available for catflap control.")
+            return False
 
     # ── Lazy-initialize a Surepy client ──
     def get_surepy_client(self) -> Surepy:
@@ -1299,8 +1312,8 @@ def handle_exit(signum=None, frame=None, exc=None):
                 if sq_cascade.camera_process.is_alive():
                     print("Camera process still alive after terminate(). Giving up and continuing shutdown.")
                     print("Camera process still alive, killing with SIGKILL")
-                    os.kill(self.camera_process.pid, signal.SIGKILL)
-                    self.camera_process.join()
+                    os.kill(sq_cascade.camera_process.pid, signal.SIGKILL)
+                    sq_cascade.camera_process.join()
         except Exception as e:
             print(f"Error shutting down camera process: {e}")
 
