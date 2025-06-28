@@ -21,8 +21,10 @@ Author:
 """
 
 import logging
+import os
+import gzip
+import shutil
 from logging.handlers import RotatingFileHandler
-import os, gzip, shutil
 
 def setup_logging(log_filename, max_log_size, backup_count, log_level_str="INFO"):
     """
