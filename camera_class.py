@@ -1,4 +1,4 @@
-#camera_class.py
+# camera_class.py
 
 """
 Cat Prey Analyzer - Camera and Frame Queue Logic Summary
@@ -26,7 +26,14 @@ Cat Prey Analyzer - Camera and Frame Queue Logic Summary
 - All queuing and acquisition logic is centralized here, ensuring reliable and recent images for analysis and user requests.
 """
 
-import os, cv2, time, gc, config, asyncio, multiprocessing, traceback, logging
+import os
+import cv2
+import time
+import gc
+import config
+import multiprocessing
+import traceback
+import logging
 from datetime import datetime
 
 # Conditionally import Picamera2 if available
@@ -61,7 +68,7 @@ class Camera:
             raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
         self.cap = None
         self.picam2 = None
-        threshold_category = self._get_threshold_category(self.motion_threshold)
+        threshold_category = 'low' if threshold < 3000 else 'medium' if threshold < 7000 else 'high'
 
         logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
@@ -93,14 +100,6 @@ class Camera:
                 proto, rest = self.base_url.split("://", 1)
                 return f"{proto}://{user}:{pw}@{rest}"
         return self.base_url
-
-    def _get_threshold_category(self, threshold):
-        if threshold < 3000:
-            return 'low'
-        elif threshold < 7000:
-            return 'medium'
-        else:
-            return 'high'
 
     def _detect_camera_type(self):
         if not self.camera_url:
@@ -270,10 +269,10 @@ class Camera:
             try:
                 # Handle pause event
                 if self.pause_event.is_set():
+                    pause_secs = self.pause_duration.value
                     if len(self.q):
                         logging.info(f"Pausing queue for {pause_secs} seconds and clearing all frames [{len(self.q)}]")
                         self.q[:] = []
-                    pause_secs = self.pause_duration.value
                     logging.info(f"Pausing queue for {pause_secs} seconds.")
                     slept = 0
                     while slept < pause_secs and not self.shutdown_flag.is_set():
@@ -288,8 +287,7 @@ class Camera:
                 if frame is None:
                     logging.error("Frame capture failed (frame is None) in main loop.")
                     continue
-                else:
-                    logging.debug("Frame captured successfully.")
+                logging.debug("Frame captured successfully.")
 
                 # Try motion detection
                 try:
@@ -312,7 +310,7 @@ class Camera:
                 elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval:
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        logging.info(f"[HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
+                        logging.info(f"🌙 [HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
                         logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
                     self.last_heartbeat_enqueue_time = now
