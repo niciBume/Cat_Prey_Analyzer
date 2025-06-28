@@ -267,10 +267,9 @@ class Camera:
                 # Handle pause event
                 if self.pause_event.is_set():
                     pause_secs = self.pause_duration.value
+                    logging.info(f"Pausing queue for {pause_secs} seconds and clearing all frames [{len(self.q)}]")
                     if len(self.q):
-                        logging.info(f"Pausing queue for {pause_secs} seconds and clearing all frames [{len(self.q)}]")
                         self.q[:] = []
-                    logging.info(f"Pausing queue for {pause_secs} seconds.")
                     slept = 0
                     while slept < pause_secs and not self.shutdown_flag.is_set():
                         time.sleep(min(0.5, pause_secs - slept))

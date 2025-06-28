@@ -273,7 +273,6 @@ class Sequential_Cascade_Feeder():
         if self.camera_process is not None and self.camera_process.is_alive():
             with self.pause_duration.get_lock():
                 self.pause_duration.value = max(0.0, float(open_time - 1))
-            logging.info(f"Pausing camera for {self.pause_duration.value} seconds")
             self.pause_event.set()
 
     # ── Retry wrapper for async Surepy calls ──
