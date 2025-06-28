@@ -210,8 +210,6 @@ def suppress_stdout_stderr():
             os.close(old_stderr_fileno)
 
 def camera_process_entry(main_deque, camera_key, shutdown_flag, pause_event, pause_duration, log_level_str):
-    import signal
-    from camera_class import Camera
     #print(f"LOG LEVEL IN CAMERA PROC: {log_level_str}") # DEBUG print
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
