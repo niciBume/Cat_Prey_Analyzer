@@ -134,8 +134,8 @@ if SLEEP_INTERVAL < 0:
     raise ValueError("SLEEP_INTERVAL must be non-negative")
 
 # Queue filling cycles
-FILL_QUEUE_CYCLES = 120
-if FILL_QUEUE_CYCLES <= 0:
+FILL_QUEUE_CYCLES = 0
+if FILL_QUEUE_CYCLES < 0:
     raise ValueError("FILL_QUEUE_CYCLES must be positive")
 
 # Process queue if longer than this number of frames
