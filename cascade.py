@@ -63,6 +63,9 @@ from surepy import Surepy
 from surepy.entities.devices import Flap
 from contextlib import contextmanager
 
+# --- Watchdog Thread for Main Analysis Loop ---
+WATCHDOG_TIMEOUT = 120  # seconds
+
 def main():
     global sq_cascade, bot_instance, cat_cam_py
     manager = multiprocessing.Manager()
@@ -179,6 +182,29 @@ def main():
     sq_cascade = Sequential_Cascade_Feeder(manager, CAMERA_KEY, use_surepy, use_ha, use_surepet, log_level_str)
     bot_instance = sq_cascade.bot
 
+    # --- Start Watchdog thread ---
+    def watchdog():
+        while not shutting_down.is_set():
+            time.sleep(WATCHDOG_TIMEOUT)
+            now = time.time()
+            try:
+                if hasattr(sq_cascade, "last_heartbeat"):
+                    elapsed = now - sq_cascade.last_heartbeat
+                    if elapsed > WATCHDOG_TIMEOUT:
+                        msg = f"❌ [WATCHDOG]: Main analysis loop appears stuck! No heartbeat for {elapsed:.1f} seconds."
+                        print(msg)
+                        logging.error(msg)
+                        try:
+                            bot_instance.send_text(msg)
+                        except Exception:
+                            pass
+                        # Optional: Take further action, e.g. force shutdown or restart
+                        # os._exit(2)
+            except Exception as e:
+                logging.error(f"Watchdog thread error: {e}")
+
+    threading.Thread(target=watchdog, daemon=True).start()
+
     try:
         sq_cascade.queue_handler()
     except Exception as e:
@@ -230,8 +256,8 @@ class Sequential_Cascade_Feeder():
         self.manager = manager
         self.main_deque = self.manager.list()
         self.shutdown_flag = self.manager.Event()
-        self.pause_event = multiprocessing.Event()
-        self.pause_duration = multiprocessing.Value('d', 0.0)
+        self.pause_event = manager.Event()
+        self.pause_duration = manager.Value('d', 0.0)
         self.camera_key = camera_key
         self.use_surepy = use_surepy
         self.use_ha = use_ha
@@ -268,6 +294,7 @@ class Sequential_Cascade_Feeder():
         self.last_unlock_state = None
         logging.debug(f"Log Dir: {self.log_dir}")
         self.log_level_str = log_level_str
+        self.last_heartbeat = time.time()
 
     def pause_camera(self, open_time):
         if self.camera_process is not None and self.camera_process.is_alive():
@@ -673,6 +700,7 @@ class Sequential_Cascade_Feeder():
         try:
             while not self.shutdown_flag.is_set():
                 try:
+                    self.last_heartbeat = time.time()
                     if len(self.main_deque) > self.fps_offset:
                         logging.debug(f"Deque type: {type(self.main_deque)}, ID={id(self.main_deque)}, max_queue_len={self.max_queue_len}, current len={len(self.main_deque)}")
                         self.queue_worker()
@@ -698,7 +726,7 @@ class Sequential_Cascade_Feeder():
             raise  # Let your global error handler deal with this
 
     def queue_worker(self):
-        logging.debug(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
+        logging.info(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
         start_time = time.time()
 
         # Ensure we have enough elements before accessing
