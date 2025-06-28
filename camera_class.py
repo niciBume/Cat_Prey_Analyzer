@@ -26,9 +26,8 @@ Cat Prey Analyzer - Camera and Frame Queue Logic Summary
 - All queuing and acquisition logic is centralized here, ensuring reliable and recent images for analysis and user requests.
 """
 
+import os, cv2, time, gc, config, asyncio, multiprocessing, traceback, logging
 from datetime import datetime
-import os, cv2, time, logging, gc, config, asyncio
-from threading import Event, Lock
 
 # Conditionally import Picamera2 if available
 try:
@@ -39,17 +38,15 @@ except ImportError:
     PICAMERA_AVAILABLE = False
     Picamera2 = Transform = None                        # type: ignore
 
-
 class Camera:
-    def __init__(self, q, camera_key, shutdown_flag):
+    def __init__(self, q, camera_key, shutdown_flag, pause_event=None, pause_duration=None, log_level_str="INFO"):
         self.q = q
         self.camera_key = camera_key
         self.shutdown_flag = shutdown_flag
+        self.pause_event = pause_event or multiprocessing.Event()
+        self.pause_duration = pause_duration or multiprocessing.Value('d', 0.0)
         self.restart_attempts = 0
         self.max_restart_attempts = 5
-        self.pause_event = Event()
-        self.pause_duration = 0.0
-        self._pause_lock = Lock()
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.heartbeat_interval = getattr(config, "HEARTBEAT_INTERVAL", 60)  # seconds
@@ -64,8 +61,8 @@ class Camera:
             raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
         self.cap = None
         self.picam2 = None
-
         threshold_category = self._get_threshold_category(self.motion_threshold)
+
         logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
         # Load config, fallback to default
@@ -78,13 +75,11 @@ class Camera:
 
         # Compose URL with credentials if needed
         self.camera_url = self._compose_url_with_creds()
-
         self.camera_type = self._detect_camera_type()
-
-        # Initialize hardware
-        self._initialize_camera()
-
         logging.info(f"Camera settings: camera_key={self.camera_key}, base_url={self.base_url}, type={self.camera_type}, width={self.cam_x}, height={self.cam_y}, hflip={self.hflip}, vflip={self.vflip}")
+
+    def start_hardware(self):
+        self._initialize_camera()
 
     def _compose_url_with_creds(self):
         if not self.base_url:
@@ -188,19 +183,38 @@ class Camera:
         self.restart_attempts = 0
 
     def _process_motion_detection(self, frame, prev_gray):
+        """
+        Detects motion between the given frame and the previous grayscale frame.
+        Returns (gray, motion_detected), where gray is the current grayscale frame.
+        """
+        if frame is None:
+            logging.warning("Received empty frame for motion detection.")
+            return prev_gray, False
+
+        # Convert to grayscale and blur to reduce noise
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (21, 21), 0)
+
         motion_detected = False
         motion_pixels = 0
 
         if prev_gray is not None:
+            # Compute absolute difference between current and previous frame
             frame_delta = cv2.absdiff(prev_gray, gray)
+            # Threshold the delta image
             thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+            # Dilate to fill in holes, making motion regions more solid
             thresh = cv2.dilate(thresh, None, iterations=2)
+            # Count the number of changed pixels
             motion_pixels = cv2.countNonZero(thresh)
             if motion_pixels > self.motion_threshold:
                 motion_detected = True
-                logging.debug(f"Motion detected: {motion_pixels} changed pixels.")
+                logging.debug(f"Motion detected: {motion_pixels} changed pixels (threshold: {self.motion_threshold}).")
+            else:
+                logging.debug(f"No significant motion: {motion_pixels} changed pixels (threshold: {self.motion_threshold}).")
+        else:
+            logging.debug("No previous frame for motion detection; skipping motion calculation.")
+
         return gray, motion_detected
 
     def _capture_frame(self):
@@ -208,7 +222,9 @@ class Camera:
             rgb = self.picam2.capture_array("main")
             frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         else:
+            logging.debug("Reading from cv2.VideoCapture...")
             ret, frame = self.cap.read()
+            logging.debug(f"cv2.VideoCapture.read() returned ret={ret}, frame is {'not None' if frame is not None else 'None'}")
             if not ret or frame is None:
                 logging.debug("RETURNING None, 'Not ret or frame is None'")
                 return None
@@ -217,88 +233,109 @@ class Camera:
                 frame = cv2.flip(frame, code)
         return frame
 
-    def prefill_queue(self):
-        prev_gray = None
-        num_prefill = self.fps_offset + 1
-        for _ in range(num_prefill):
-            timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
-            frame = self._capture_frame()
-            if frame is not None:
-                if len(self.q) < self.max_queue_len:
-                    self.q.append((timestamp, frame))
-                    logging.debug(f"Prequeued first frames at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} max_queue_len={self.max_queue_len}, maxlen={self.q.maxlen}, maxlen={self.q.maxlen}")
-            else:
-                logging.error("Frame was None!")
-            time.sleep(self.sleep_interval)
-
-    def _interruptible_sleep(self, duration):
-        step = 0.1  # seconds
-        waited = 0.0
-        while waited < duration:
-            if self.shutdown_flag.is_set():
-                break
-            to_sleep = min(step, duration - waited)
-            time.sleep(to_sleep)
-            waited += to_sleep
-
     def main_capture_loop(self):
         i = 0
         self.last_heartbeat_enqueue_time = time.time()
+        logging.debug(f"MAIN_CAPTURE_LOOP STARTED in PID {os.getpid()}")
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
-        prev_gray = None
 
+        # --- Prefill queue and initialize prev_gray ---
+        prev_gray = None
+        last_frame = None
+        num_prefill = self.fps_offset + 1
+        logging.debug("Starting PREFILL loop")
+        for idx in range(num_prefill):
+            logging.debug(f"PREFILL: About to capture frame {idx+1}/{num_prefill}")
+            frame = self._capture_frame()
+            logging.debug(f"PREFILL: Got frame? {'YES' if frame is not None else 'NO'}")
+            if frame is not None:
+                if len(self.q) < self.max_queue_len:
+                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                    self.q.append((timestamp, frame))
+                    last_frame = frame
+                    logging.debug(f"PREFILL: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
+            else:
+                logging.error("Prefill: Frame was None!")
+            time.sleep(self.sleep_interval)
+        if last_frame is not None:
+            prev_gray = cv2.cvtColor(last_frame, cv2.COLOR_BGR2GRAY)
+            prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
+            logging.debug("Initialized prev_gray from last prefill frame.")
+
+        logging.debug("DONE PREFILL - entering main loop")
+
+        # --- Main capture loop ---
         while not self.shutdown_flag.is_set():
+            logging.debug(f"Queue type: {type(self.q)}, queue id: {id(self.q)}, length: {len(self.q)}")
             try:
-                #logging.debug(f"camera q ID={id(self.q)}, maxlen={self.q.maxlen}, len={len(self.q)}, self.sleep_interval={self.sleep_interval}")
+                # Handle pause event
                 if self.pause_event.is_set():
-                    with self._pause_lock:
-                        if len(self.q):
-                            logging.info(f"Pausing queue and clearing all frames [{len(self.q)}]")
-                            self.q.clear()
-                        logging.info(f"Queueing paused for {self.pause_duration} seconds.")
-                        pause_duration = self.pause_duration
-                        self.pause_duration = 0.0
-                    self._interruptible_sleep(pause_duration)
+                    if len(self.q):
+                        logging.info(f"Pausing queue for {pause_secs} seconds and clearing all frames [{len(self.q)}]")
+                        self.q[:] = []
+                    pause_secs = self.pause_duration.value
+                    logging.info(f"Pausing queue for {pause_secs} seconds.")
+                    slept = 0
+                    while slept < pause_secs and not self.shutdown_flag.is_set():
+                        time.sleep(min(0.5, pause_secs - slept))
+                        slept += 0.5
                     self.pause_event.clear()
                     continue
 
+                # Grab a frame
                 frame = self._capture_frame()
-                gray, motion_detected = self._process_motion_detection(frame, prev_gray)
-                prev_gray = gray
                 now = time.time()
+                if frame is None:
+                    logging.error("Frame capture failed (frame is None) in main loop.")
+                    continue
+                else:
+                    logging.debug("Frame captured successfully.")
 
+                # Try motion detection
+                try:
+                    gray, motion_detected = self._process_motion_detection(frame, prev_gray)
+                except Exception as e:
+                    logging.error(f"Motion detection failed: {e}\n{traceback.format_exc()}")
+                    gray, motion_detected = None, False
+                prev_gray = gray
+
+                logging.debug(f"Motion detected: {motion_detected}")
+
+                timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                # Motion or heartbeat: queue frame
                 if motion_detected:
-                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        logging.debug(f"[{self.camera_type.upper()}] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
+                        logging.info(f"[MOTION] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
                     else:
                         logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
                 elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval:
-                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        logging.info(f"🌙 Heartbeat: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
+                        logging.info(f"[HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
                         logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
                     self.last_heartbeat_enqueue_time = now
 
-                self._interruptible_sleep(self.sleep_interval)
+                # Show queue contents for debug
+                logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")
+
+                # Sleep in small increments to allow shutdown responsiveness
+                slept = 0
+                while slept < self.sleep_interval and not self.shutdown_flag.is_set():
+                    time.sleep(min(0.1, self.sleep_interval - slept))
+                    slept += 0.1
 
                 i += 1
-                if i >= self.queue_cycles:
+                if self.queue_cycles > 0 and i >= self.queue_cycles:
                     logging.info(f"Refreshing camera after {self.queue_cycles} frames.")
                     self._restart_camera()
                     i = 0
 
-                self._interruptible_sleep(0.05)
-
             except Exception as e:
-                if asyncio.iscoroutine(e):
-                    print("CAUGHT COROUTINE IN EXCEPTION HANDLER!", e)
-                    logging.error("❗ Coroutine object was caught as Exception in shutdown handler!")
-                    return
-                logging.error(f"Exception in fill_queue {type(e).__name__}: {e}")
+                logging.error(f"Exception in fill_queue {type(e).__name__}: {e}\n{traceback.format_exc()}")
                 self._restart_camera()
-                self._interruptible_sleep(1)
-        logging.info("Camera loop exiting (shutdown_flag set)")
+                slept = 0
+                while slept < 1.0 and not self.shutdown_flag.is_set():
+                    time.sleep(min(0.1, 1.0 - slept))
+                    slept += 0.1
