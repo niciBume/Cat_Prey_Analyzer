@@ -1269,11 +1269,8 @@ class Spec_Event_Handler():
 
 # Prevent multiple shutdowns
 shutting_down = threading.Event()
-sq_cascade = None
-bot_instance = None
 
 def handle_exit(signum=None, frame=None, exc=None):
-    global sq_cascade, bot_instance
     if shutting_down.is_set():
         print("Shutdown already in progress, ignoring signal/exception.")
         return
@@ -1291,7 +1288,7 @@ def handle_exit(signum=None, frame=None, exc=None):
     try:
         if bot_instance:
             bot_instance.shutdown_bot()
-            print(f"Stopped bot")
+            print("Stopped bot")
     except Exception as e:
         print(f"Failed to stop bot: {e}")
 
