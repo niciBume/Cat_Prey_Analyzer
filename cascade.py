@@ -210,7 +210,7 @@ def suppress_stdout_stderr():
             os.close(old_stderr_fileno)
 
 def camera_process_entry(main_deque, camera_key, shutdown_flag, pause_event, pause_duration, log_level_str):
-    #print(f"LOG LEVEL IN CAMERA PROC: {log_level_str}") # DEBUG print
+    # Ignore SIGINT in camera process to allow clean shutdown from main process
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
     setup_logging(
@@ -400,10 +400,6 @@ class Sequential_Cascade_Feeder():
             if not ha_state:
                 raise ValueError("⚠️  No 'state' in HA response JSON")
         except Exception as e:
-            if asyncio.iscoroutine(e):
-                print("CAUGHT COROUTINE IN EXCEPTION HANDLER!", e)
-                self.bot.send_text("❗ Coroutine object was caught as Exception in shutdown handler!")
-                return
             self.bot.send_text(f"❌ Failed to decode HA state: {e}")
             return False
 
@@ -517,10 +513,6 @@ class Sequential_Cascade_Feeder():
             return device
 
         except Exception as e:
-            if asyncio.iscoroutine(e):
-                print("CAUGHT COROUTINE IN EXCEPTION HANDLER!", e)
-                self.bot.send_text("❗ Coroutine object was caught as Exception in shutdown handler!")
-                return
             logging.error(f"❌ Error fetching device from Surepy: {e}")
             return None
 
