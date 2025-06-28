@@ -264,8 +264,8 @@ class Sequential_Cascade_Feeder():
         self.surepy_client: Optional[Surepy] = None
         self.device_cache: Optional[Flap] = None
         self.surepy_client = None
-        self.last_unlock_method = None  # "surepy" or "ha"
-        self.last_unlock_state = None   # e.g., "locked_all" or "locked_out"
+        self.last_unlock_method = None
+        self.last_unlock_state = None
         logging.debug(f"Log Dir: {self.log_dir}")
         self.log_level_str = log_level_str
 
@@ -321,60 +321,46 @@ class Sequential_Cascade_Feeder():
         return False
 
     def relock_catflap_on_exit(self):
-        """Attempt to relock the catflap when shutting down, synchronously if possible."""
-        if self.last_unlock_method == "surepy":
-            coro = self.set_catflap_lock_state_surepy(self.last_unlock_state)
-            try:
-                # Try to run the coroutine in a new event loop (preferred for shutdown)
-                asyncio.run(coro)
-                msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit."
-                print(msg)
-                self.bot.send_text(msg)
-            except RuntimeError as e:
-                # This happens if we're already in an event loop (common in some contexts)
+        if self.last_unlock_state is not None:
+            if self.last_unlock_method == "surepy":
+                # Run the async relock in a dedicated thread and block until done
+                result_holder = {}
+
+                def run_relock():
+                    try:
+                        # Each thread can have its own event loop!
+                        import asyncio
+                        result = asyncio.run(self.set_catflap_lock_state_surepy(self.last_unlock_state))
+                        result_holder["msg"] = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit."
+                        result_holder["err"] = None
+                    except Exception as e:
+                        result_holder["msg"] = f"❌ Catflap relock failed via Surepy on exit: {e}"
+                        result_holder["err"] = e
+
+                t = threading.Thread(target=run_relock)
+                t.start()
+                t.join()   # Block until relock finishes
+
+                print(result_holder["msg"])
+                if hasattr(self, "bot"):
+                    try:
+                        self.bot.send_text(result_holder["msg"])
+                    except Exception:
+                        pass
+
+            if self.last_unlock_method == "ha":
                 try:
-                    loop = asyncio.get_event_loop()
-                    if loop.is_running():
-                        # Fire-and-forget, but log result when done
-                        task = loop.create_task(coro)
-                        def on_done(t):
-                            try:
-                                result = t.result()
-                                msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit (async task)."
-                            except Exception as ex:
-                                msg = f"❌ Catflap relock failed via Surepy on exit: {ex}"
-                            print(msg)
-                            try:
-                                self.bot.send_text(msg)
-                            except Exception:
-                                pass
-                        task.add_done_callback(on_done)
-                    else:
-                        loop.run_until_complete(coro)
-                        msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit (event loop fallback)."
-                        print(msg)
-                        self.bot.send_text(msg)
-                except Exception as ex:
-                    msg = f"❌ Catflap relock failed via Surepy on exit (event loop error): {ex}"
+                    self.try_post_with_retries(config.HA_WEBHOOK, self.last_unlock_state, f"Re-lock catflap to [{self.last_unlock_state}]")
+                    msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via HA on exit."
+                    print(msg)
+                    self.bot.send_text(msg)
+                except Exception as e:
+                    msg = f"❌ Failed to re-lock via HA on exit: {e}"
                     print(msg)
                     try:
                         self.bot.send_text(msg)
                     except Exception:
                         pass
-
-        elif self.last_unlock_method == "ha":
-            try:
-                self.try_post_with_retries(config.HA_WEBHOOK, self.last_unlock_state, f"Re-lock catflap to [{self.last_unlock_state}]")
-                msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via HA on exit."
-                print(msg)
-                self.bot.send_text(msg)
-            except Exception as e:
-                msg = f"❌ Failed to re-lock via HA on exit: {e}"
-                print(msg)
-                try:
-                    self.bot.send_text(msg)
-                except Exception:
-                    pass
         else:
             msg = "ℹ️  No catflap unlock detected, skipping re-lock on exit."
             print(msg)
@@ -415,8 +401,10 @@ class Sequential_Cascade_Feeder():
                 self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {self.open_time}s.")
                 self.pause_camera(self.open_time)
                 time.sleep(self.open_time)
-                if self.try_post_with_retries(config.HA_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}]"):
+                if self.try_post_with_retries(config.HA_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}] via HA"):
                     self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{ha_state}].")
+                    self.last_unlock_method = None
+                    self.last_unlock_state = None
                     return True
                 else:
                     self.bot.send_text("❌ Error re-locking HA catflap.")
@@ -457,7 +445,9 @@ class Sequential_Cascade_Feeder():
                 async def relock_fn():
                     return await self.set_catflap_lock_state_surepy(state)
                 if await self.try_surepy_with_retries(relock_fn, f"Re-lock catflap to [{state}] via Surepy"):
-                    self.bot.send_text(f"ℹ️  Catflap is back to previous state: [{state}].")
+                    self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{state}].")
+                    self.last_unlock_method = None
+                    self.last_unlock_state = None
                     return True   # <-- ADD THIS for successful sequence
                 else:
                     self.bot.send_text("❌ Error re-locking catflap via Sure Petcare.")
@@ -466,7 +456,7 @@ class Sequential_Cascade_Feeder():
                 self.bot.send_text("❌ Failed to unlock catflap via Sure Petcare.")
                 return False
         else:
-            self.bot.send_text(f"⚠️  Unknown Sure Petcare catflap state: [{state}]")
+            self.bot.send_text(f"⚠️  Catflap Sure Petcare [{state}] is not one of locked_out or locked_all")
             return False
 
     def open_catflap(self):
@@ -1281,14 +1271,6 @@ def handle_exit(signum=None, frame=None, exc=None):
     except Exception as e:
         print(f"Failed to relock catflap: {e}")
 
-    # Stop the bot cleanly
-    try:
-        if bot_instance:
-            bot_instance.shutdown_bot()
-            print("Stopped bot")
-    except Exception as e:
-        print(f"Failed to stop bot: {e}")
-
     # Shutdown camera process first
     if sq_cascade and sq_cascade.camera_process is not None:
         try:
@@ -1307,6 +1289,21 @@ def handle_exit(signum=None, frame=None, exc=None):
                     sq_cascade.camera_process.join()
         except Exception as e:
             print(f"Error shutting down camera process: {e}")
+
+    # Send the final shutdown confirmation
+    try:
+        if bot_instance:
+            bot_instance.send_text("✅ Cat Prey Analyzer process has shut down cleanly.")
+    except Exception:
+        pass
+
+    # Now stop the bot cleanly
+    try:
+        if bot_instance:
+            bot_instance.shutdown_bot()
+            print("Stopped bot")
+    except Exception as e:
+        print(f"Failed to stop bot: {e}")
 
     time.sleep(0.25)
     print("Exiting main process (forced).")
