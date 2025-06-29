@@ -47,10 +47,10 @@ import signal
 import threading
 import config
 import logging
+import traceback
 import numpy as np
 import xml.etree.ElementTree as ET
 import multiprocessing
-from multiprocessing import Process
 from logging_setup import setup_logging
 from pathlib import Path
 from datetime import datetime
@@ -129,15 +129,15 @@ def main():
     def use_surepy():
         """Return True if Surepy is configured: device ID and credentials present."""
         # Always require device ID
-        if not hasattr(config, "SUREPY_DEVICE_ID") or getattr(config, "SUREPY_DEVICE_ID") in (None, "", 0):
+        if not hasattr(config, "SUREPY_DEVICE_ID") or config.SUREPY_DEVICE_ID in (None, "", 0):
             logging.debug("⚠️  Surepy config missing or empty SUREPY_DEVICE_ID")
             logging.info("⚠️  Surepy module NOT available!")
             return False
 
         # Require either token, or both email and password
-        has_token = hasattr(config, "SUREPY_TOKEN") and getattr(config, "SUREPY_TOKEN") not in (None, "", 0)
-        has_email = hasattr(config, "SUREPY_EMAIL") and getattr(config, "SUREPY_EMAIL") not in (None, "", 0)
-        has_password = hasattr(config, "SUREPY_PASSWORD") and getattr(config, "SUREPY_PASSWORD") not in (None, "", 0)
+        has_token = hasattr(config, "SUREPY_TOKEN") and config.SUREPY_TOKEN not in (None, "", 0)
+        has_email = hasattr(config, "SUREPY_EMAIL") and config.SUREPY_EMAIL not in (None, "", 0)
+        has_password = hasattr(config, "SUREPY_PASSWORD") and config.SUREPY_PASSWORD not in (None, "", 0)
 
         if not (has_token or (has_email and has_password)):
             logging.debug(
@@ -151,9 +151,9 @@ def main():
     # ── Helper to know whether to try HA at all ──
     def use_ha():
         """Return True if all HA config attributes are set (not None, empty, or zero)."""
-        has_webhook = hasattr(config, "HA_WEBHOOK") and getattr(config, "HA_WEBHOOK") not in (None, "", 0)
-        has_rest_url = hasattr(config, "HA_REST_URL") and getattr(config, "HA_REST_URL") not in (None, "", 0)
-        has_rest_token = hasattr(config, "HA_REST_TOKEN") and getattr(config, "HA_REST_TOKEN") not in (None, "", 0)
+        has_webhook = hasattr(config, "HA_WEBHOOK") and config.HA_WEBHOOK not in (None, "", 0)
+        has_rest_url = hasattr(config, "HA_REST_URL") and config.HA_REST_URL not in (None, "", 0)
+        has_rest_token = hasattr(config, "HA_REST_TOKEN") and config.HA_REST_TOKEN not in (None, "", 0)
 
         if not (has_webhook and has_rest_url and has_rest_token):
             logging.debug("⚠️  Some HA config attributes are not set or empty.")
@@ -238,7 +238,7 @@ def main():
         sq_cascade.queue_handler()
     except Exception as e:
         print(f"Exception in main: {type(e).__name__}: {e}")
-        import traceback; traceback.print_exc()
+        traceback.print_exc()
         handle_exit(exc=e)
 
 @contextmanager
@@ -443,6 +443,7 @@ class Sequential_Cascade_Feeder():
             self.bot.send_text(f"❌ Failed to decode HA state: {e}")
             return False
 
+        ha_state = ha_state.replace("-", "_")
         open_states = {"unlocked", "locked_in"}
         if ha_state in open_states:
             self.bot.send_text(f"ℹ️  Catflap already open inwards: [{ha_state}]")
