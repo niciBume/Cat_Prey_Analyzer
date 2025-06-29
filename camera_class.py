@@ -50,8 +50,8 @@ class Camera:
         self.q = q
         self.camera_key = camera_key
         self.shutdown_flag = shutdown_flag
-        self.pause_event = pause_event or multiprocessing.Event()
-        self.pause_duration = pause_duration or multiprocessing.Value('d', 0.0)
+        self.pause_event = pause_event or manager.Event()
+        self.pause_duration = pause_duration or manager.Value('d', 0.0)
         self.restart_attempts = 0
         self.max_restart_attempts = 5
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
@@ -63,7 +63,7 @@ class Camera:
         self.max_queue_len = getattr(config, "MAX_QUEUE_LEN", 20)
         if self.max_queue_len <= 0:
             raise ValueError(f"Invalid MAX_QUEUE_LEN: {self.max_queue_len}")
-        self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.25)
+        self.sleep_interval = getattr(config, "SLEEP_INTERVAL", 0.5)
         if self.sleep_interval <= 0:
             raise ValueError(f"Invalid SLEEP_INTERVAL: {self.sleep_interval}")
         self.cap = None
@@ -230,6 +230,9 @@ class Camera:
         return frame
 
     def main_capture_loop(self):
+        consec_failures = 0
+        MAX_FRAME_FAILURES = 10  # You can tune this
+
         i = 0
         self.last_heartbeat_enqueue_time = time.time()
         logging.debug(f"MAIN_CAPTURE_LOOP STARTED in PID {os.getpid()}")
@@ -241,17 +244,23 @@ class Camera:
         num_prefill = self.fps_offset + 1
         logging.debug("Starting PREFILL loop")
         for idx in range(num_prefill):
-            logging.debug(f"PREFILL: About to capture frame {idx+1}/{num_prefill}")
             frame = self._capture_frame()
-            logging.debug(f"PREFILL: Got frame? {'YES' if frame is not None else 'NO'}")
-            if frame is not None:
+            if frame is None:
+                logging.error("[PREFILL]: Frame capture failed (frame is None)!")
+                consec_failures += 1
+                if consec_failures >= MAX_FRAME_FAILURES:
+                    logging.error(f"[PREFILL]: Too many consecutive frame failures ({MAX_FRAME_FAILURES}), exiting camera process for restart.")
+                    sys.exit(13)
+                time.sleep(1)
+                continue
+            else:
                 if len(self.q) < self.max_queue_len:
                     timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
                     self.q.append((timestamp, frame))
                     last_frame = frame
-                    logging.debug(f"PREFILL: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
-            else:
-                logging.error("Prefill: Frame was None!")
+                    logging.debug(f"[PREFILL]: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
+                    consec_failures = 0
+
             time.sleep(self.sleep_interval)
         if last_frame is not None:
             prev_gray = cv2.cvtColor(last_frame, cv2.COLOR_BGR2GRAY)
@@ -278,12 +287,19 @@ class Camera:
                     continue
 
                 # Grab a frame
-                frame = self._capture_frame()
                 now = time.time()
+                frame = self._capture_frame()
                 if frame is None:
                     logging.error("Frame capture failed (frame is None) in main loop.")
+                    consec_failures += 1
+                    if consec_failures >= MAX_FRAME_FAILURES:
+                        logging.error(f"Too many consecutive frame failures ({MAX_FRAME_FAILURES}), exiting camera process for restart.")
+                        sys.exit(13)
+                    time.sleep(1)
                     continue
-                logging.debug("Frame captured successfully.")
+                else:
+                    consec_failures = 0
+                logging.debug(f"Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
 
                 # Try motion detection
                 try:
@@ -305,6 +321,17 @@ class Camera:
                         logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
                 elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval:
                     if len(self.q) < self.max_queue_len:
+                        """
+                        logging.warning(f"Appending to deque: {type(frame)}, {repr(frame)[:100]}")
+                        import pickle
+                        try:
+                            pickle.dumps(frame)
+                        except Exception as e:
+                            print("Pickle error:", e)
+                        ret, jpeg = cv2.imencode(".jpg", frame)  # frame is your numpy ndarray from the camera
+                        if ret:
+                            self.q.append((timestamp, jpeg.tobytes()))
+                        """
                         self.q.append((timestamp, frame))
                         logging.info(f"🌙 [HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
