@@ -190,6 +190,8 @@ def main():
             if sq_cascade.camera_process is not None:
                 sq_cascade.camera_process.join()
                 exitcode = sq_cascade.camera_process.exitcode
+                if shutting_down.is_set():
+                    break  # Don't restart if we're shutting down
                 logging.warning(f"Camera process exited with code {exitcode}. Restarting in 5 seconds.")
                 time.sleep(5)
                 # Optionally clear main_deque here if you want
