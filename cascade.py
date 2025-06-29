@@ -385,7 +385,7 @@ class Sequential_Cascade_Feeder():
                     try:
                         # Each thread can have its own event loop!
                         import asyncio
-                        result = asyncio.run(self.set_catflap_lock_state_surepy(self.last_unlock_state))
+                        asyncio.run(self.set_catflap_lock_state_surepy(self.last_unlock_state))
                         result_holder["msg"] = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit."
                         result_holder["err"] = None
                     except Exception as e:
