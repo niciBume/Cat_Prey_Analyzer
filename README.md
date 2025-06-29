@@ -26,8 +26,8 @@ Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END ED
 ```bash
 python3 cascade.py --camera cam2 --log info
 ```
-- You can also specify a preferred backend for (un-)locking the catflap, so if you configured the correct credentials for both methods in your `.env` and `config.py`, you can select the one you want to use. _NOTE_: if the so chosen backend doesn’t work, there’s no fall-back to the other one. An error will be shown instead.
-For this, use the optional command line attribute `-b` (or `--backend`), which can be set to either 'surepy' or 'ha'.
+- You can also specify a preferred backend for un-/locking the catflap if you configured the correct credentials for both. Select it by using the optional attribute `--backend`, which can be set to either 'surepy' or 'ha'. **NOTE**: if the chosen backend doesn’t work, there’s **no fall-back** to the other one, an error will be shown instead!
+
 
 Here's a full help menu of the main script cascade.py:
 
@@ -45,7 +45,7 @@ usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA] [-b 
     Create a [hidden] .env file containing your secrets and 'source' it before
     firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
     You can also tweak the rest of the values in config.py for better performance.
-    
+
 
 options:
   -h, --help            show this help message and exit
@@ -65,7 +65,7 @@ By following all these steps, you should now be greeted by your Telegram Bot at 
 
 <img src="/readme_images/bot_good_morning.png" alt="Telegram Bot greeting" width="400">
 
-The system is now running and you the bot commands are shown. You can also access those by typing `/help` in your bot conversation. Be aware that you need patience at startup, as the models take up to 5 min to load—they are substantial in size.
+The system is now running and the available bot commands are shown. You can access those anytime by typing `/help` in your bot conversation. Be aware that you need patience at startup, as the models take up to 5 min to load — they are substantial in size.
 
 # Catflap Lock/Unlock Backends
 For these two following steps you need to get your Sure Petcare's <catflap ID> by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note the ID from the URL you see in your browser, it'll look something like this: `https://surepetcare.io/device/<YourID>/details`.

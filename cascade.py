@@ -104,7 +104,7 @@ def main():
             type=str,
             choices= ['surepy', 'ha'],
             required=False,
-            help="""Force use of one of the following backends for catflap un/locking)
+            help="""Force use of one of the following backends for catflap un-/locking
               - surepy (use surepy module)
               - ha (use homeassistant REST/Webhook)
               make sure to define correct settings in the .env file
