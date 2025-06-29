@@ -232,7 +232,7 @@ class Camera:
 
     def main_capture_loop(self):
         consec_failures = 0
-        MAX_FRAME_FAILURES = 10  # You can tune this
+        MAX_FRAME_FAILURES = 5  # You can tune this
 
         i = 0
         self.last_heartbeat_enqueue_time = time.time()
