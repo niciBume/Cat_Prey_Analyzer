@@ -13,28 +13,62 @@ The difference of this project however is that it aims to solve *general* cat-pr
 # How to use the Code
 The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net/de/products/rb-camera-IR_PRO) attached. If you have knowledge regarding Keras, you can also run the models on your own, as the .h5 files can be found in the /models directory (check the input shapes, as they can vary). Nonetheless, I will explain the prerequesites to run this project on the RPI4 with the attached infrared camera:
 
-- Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory such that its path matches: ```/home/pi/CatPreyAnalyzer```
+- Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory such that its path matches: `/home/pi/CatPreyAnalyzer` (check your `PYTHONPATH=:/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
 
 - Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
 - Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so, your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling ```https://api.telegram.org/bot<YourBOTToken>/getUpdates``` in your browser, as explained in the [StackOverflow guide on obtaining a Telegram group chat ID](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
 
-- Create an `.env` file (or copy it from `.env.example`) in the root directory, fill in your secrets, then it will be sourced before running `cascade.py`. The syntax of .env files supported by python-dotenv is similar to that of Bash. Take a look at [python-dotenv](https://pypi.org/project/python-dotenv/).
+- Create an `.env` file (use `.env.example` as a template) in the root directory and fill in your secrets. This will be sourced when running `cascade.py`. The syntax of `.env` files supported by python-dotenv is similar to that of Bash. Take a look at [python-dotenv](https://pypi.org/project/python-dotenv/).
 
-Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`, then start `cascade.py` like this:
+Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`. Set your preferences, camera URLs, video resolutions and the horizontal/vertical fliping options. After that, you can start `cascade.py` like this:
 
 ```bash
-python3 cascade.py rtsp://192.168.1.1/unicast --log debug
+python3 cascade.py --camera cam2 --log info
 ```
+- You can also specify a preferred backend for (un-)locking the catflap, so if you configured the correct credentials for both methods in your `.env` and `config.py`, you can select the one you want to use. _NOTE_: if the so chosen backend doesn’t work, there’s no fall-back to the other one. An error will be shown instead.
+For this, use the optional command line attribute `-b` (or `--backend`), which can be set to either 'surepy' or 'ha'.
+
+Here's a full help menu of the main script cascade.py:
+
+```bash
+$ python3 cascade.py --help
+usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA] [-b {surepy,ha}]
+
+    Cat Prey Analyzer - Smart Cat Flap Monitor
+
+    This tool uses camera input and machine learning to detect
+    whether a cat is bringing prey, managing catflap control
+    either through the python surepy module or through homeassistant.
+    It communicates with the user and can be controlled through telegram app.
+
+    Create a [hidden] .env file containing your secrets and 'source' it before
+    firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
+    You can also tweak the rest of the values in config.py for better performance.
+    
+
+options:
+  -h, --help            show this help message and exit
+  -l {info,warning,error,critical,debug}, --log {info,warning,error,critical,debug}
+                        Set the logging level
+  -c CAMERA, --camera CAMERA
+                        Camera key as defined in config.py (e.g., cam1, cam2)
+  -b {surepy,ha}, --backend {surepy,ha}
+                        Force use of one of the following backends for catflap un/locking)
+                                      - surepy (use surepy module)
+                                      - ha (use homeassistant REST/Webhook)
+                                      make sure to define correct settings in the .env file
+```
+
 
 By following all these steps, you should now be greeted by your Telegram Bot at startup:
 
 <img src="/readme_images/bot_good_morning.png" alt="Telegram Bot greeting" width="400">
 
-The system is now running, and you can check out the bot commands via `/help`. Be aware that you need patience at startup, as the models take up to 5 min to load—they are substantial in size.
+The system is now running and you the bot commands are shown. You can also access those by typing `/help` in your bot conversation. Be aware that you need patience at startup, as the models take up to 5 min to load—they are substantial in size.
 
 # Catflap Lock/Unlock Backends
-For these two following steps you need to get your Sure Petcare's <catflap ID> by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note the ID from the URL you see in your browser, it'll look something like this: `https://surepetcare.io/device/12345678/details`.
+For these two following steps you need to get your Sure Petcare's <catflap ID> by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note the ID from the URL you see in your browser, it'll look something like this: `https://surepetcare.io/device/<YourID>/details`.
 
 # Configuring Surepy
 You need to install the [dev branch of surepy](https://github.com/benleb/surepy/tree/dev) as a module (see requirements.txt and python documentation), then set your catflap ID and credentials (either email AND password, the surepy token, or both) in the `.env` file.
@@ -66,46 +100,6 @@ actions:
       lock_state: "{{ trigger.json.ha_state }}"
       flap_id: "12345678"
     action: sureha.set_lock_state
-```
-
-- New addition: optional command line attribute `-b` or `--backend`, which can be either 'surepy' or 'ha'.
-
-You can now specify a preferred backend for un/locking the catflap, so if you configured both in .source_env, you can select the one you want to use. If the so chosen backend doesn’t work, there’s no fall-back to the other one. An error will be shown instead.
-
-Here's a full help menu of the main script cascade.py:
-
-```bash
-$ python3 cascade.py -h
-usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA_URL] [-b {surepy,ha}]
-
-Cat Prey Analyzer - Smart Cat Flap Monitor
-
-This tool uses camera input and machine learning to detect
-whether a cat is bringing prey, managing catflap control
-either through the python surepy module or through homeassistant.
-It communicates with the user and can be controlled through telegram app.
-
-Create a [hidden] .env file containing your secrets and 'source' it before
-firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
-You can also tweak the rest of the values in config.py for better performance.
-
-options:
-  -h, --help            show this help message and exit
-  -l {info,warning,error,critical,debug}, --log {info,warning,error,critical,debug}
-                        Set the logging level
-  -c CAMERA_URL, --camera-url CAMERA_URL
-                        Set camera input source:
-                                  - libcamera (DEFAULT fallback, if parameter not set)
-                                  - MJPEG stream (http://...)
-                                  - RTSP stream (rtsp://...)
-                                  - USB webcam (CAMERA_URL is digit)
-                                  - Video file (if URL is a file, ending in avi/mp4)
-
-  -b {surepy,ha}, --backend {surepy,ha}
-                        Force use of one of the following backends for catflap un/locking)
-                                  - surepy (use surepy module)
-                                  - ha (use homeassistant REST/Webhook)
-                                  make sure to define correct settings in the .env file
 ```
 
 # A word of caution
