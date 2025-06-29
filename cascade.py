@@ -183,22 +183,29 @@ def main():
     bot_instance = sq_cascade.bot
 
     def monitor_camera_proc():
+        # Wait until camera_process is created
+        while sq_cascade.camera_process is None:
+            time.sleep(0.1)
         while not shutting_down.is_set():
-            sq_cascade.camera_process.join()
-            exitcode = sq_cascade.camera_process.exitcode
-            logging.warning(f"Camera process exited with code {exitcode}. Restarting in 5 seconds.")
-            time.sleep(5)
-            # Optionally clear main_deque here if you want
-            sq_cascade.camera_process = multiprocessing.Process(
-                target=camera_process_entry,
-                args=(sq_cascade.main_deque, sq_cascade.camera_key, sq_cascade.shutdown_flag, sq_cascade.pause_event, sq_cascade.pause_duration, sq_cascade.log_level_str),
-                daemon=True
-            )
-            sq_cascade.camera_process.start()
-            try:
-                bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
-            except Exception:
-                pass
+            if sq_cascade.camera_process is not None:
+                sq_cascade.camera_process.join()
+                exitcode = sq_cascade.camera_process.exitcode
+                logging.warning(f"Camera process exited with code {exitcode}. Restarting in 5 seconds.")
+                time.sleep(5)
+                # Optionally clear main_deque here if you want
+                sq_cascade.camera_process = multiprocessing.Process(
+                    target=camera_process_entry,
+                    args=(sq_cascade.main_deque, sq_cascade.camera_key, sq_cascade.shutdown_flag, sq_cascade.pause_event, sq_cascade.pause_duration, sq_cascade.log_level_str),
+                    daemon=True
+                )
+                sq_cascade.camera_process.start()
+                try:
+                    bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
+                except Exception:
+                    pass
+            else:
+                # Defensive: shouldn't happen, but wait and retry
+                time.sleep(0.5)
 
     threading.Thread(target=monitor_camera_proc, daemon=True).start()
 
