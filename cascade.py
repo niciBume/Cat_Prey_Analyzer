@@ -45,15 +45,15 @@ import argparse
 import asyncio
 import signal
 import threading
-import multiprocessing
 import config
 import logging
 import numpy as np
 import xml.etree.ElementTree as ET
+import multiprocessing
+from multiprocessing import Process
 from logging_setup import setup_logging
 from pathlib import Path
 from datetime import datetime
-from multiprocessing import Process
 from telegram.ext import Updater, CommandHandler
 from io import BytesIO
 from typing import Optional, List
@@ -181,6 +181,26 @@ def main():
 
     sq_cascade = Sequential_Cascade_Feeder(manager, CAMERA_KEY, use_surepy, use_ha, use_surepet, log_level_str)
     bot_instance = sq_cascade.bot
+
+    def monitor_camera_proc():
+        while not shutting_down.is_set():
+            sq_cascade.camera_process.join()
+            exitcode = sq_cascade.camera_process.exitcode
+            logging.warning(f"Camera process exited with code {exitcode}. Restarting in 5 seconds.")
+            time.sleep(5)
+            # Optionally clear main_deque here if you want
+            sq_cascade.camera_process = multiprocessing.Process(
+                target=camera_process_entry,
+                args=(sq_cascade.main_deque, sq_cascade.camera_key, sq_cascade.shutdown_flag, sq_cascade.pause_event, sq_cascade.pause_duration, sq_cascade.log_level_str),
+                daemon=True
+            )
+            sq_cascade.camera_process.start()
+            try:
+                bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
+            except Exception:
+                pass
+
+    threading.Thread(target=monitor_camera_proc, daemon=True).start()
 
     # --- Start Watchdog thread ---
     def watchdog():
@@ -779,18 +799,14 @@ class Sequential_Cascade_Feeder():
                 if self.cumulus_points / self.face_counter > self.cumulus_no_prey_threshold:
                     self.NO_PREY_FLAG = True
                     logging.info("🐱 NO PREY DETECTED... YOU CLEAN...")
-                    p = Process(target=self.send_no_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
-                    p.start()
-                    self.processing_pool.append(p)
+                    self.send_no_prey_message(self.event_objects, self.cumulus_points / self.face_counter)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.bot.send_text("😸️ Cat is clean, unlocking the catflap temporarily")
                     self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
                     logging.info("🐁 CAT HAS A PREY!!!!!")
-                    p = Process(target=self.send_prey_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
-                    p.start()
-                    self.processing_pool.append(p)
+                    self.send_prey_message(self.event_objects, self.cumulus_points / self.face_counter)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.reset_cumuli_et_al()
                 else:
@@ -811,10 +827,8 @@ class Sequential_Cascade_Feeder():
                     #TODO QUICK FIX
                     if self.face_counter == 0:
                         self.face_counter = 1
-                    p = Process(target=self.send_dk_message, args=(self.event_objects, self.cumulus_points / self.face_counter,), daemon=True)
-                    p.start()
-                    self.processing_pool.append(p)
-                    #self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
+                    self.send_dk_message(self.event_objects, self.cumulus_points / self.face_counter)
+                    #self.log_event_to_csv...
                 self.reset_cumuli_et_al()
 
         if self.EVENT_FLAG and self.FACE_FOUND_FLAG:
