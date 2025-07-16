@@ -13,7 +13,7 @@ The difference of this project however is that it aims to solve *general* cat-pr
 # How to use the Code
 The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net/de/products/rb-camera-IR_PRO) attached. If you have knowledge regarding Keras, you can also run the models on your own, as the .h5 files can be found in the /models directory (check the input shapes, as they can vary). Nonetheless, I will explain the prerequesites to run this project on the RPI4 with the attached infrared camera:
 
-- Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory such that its path matches: `/home/pi/CatPreyAnalyzer` (check your `PYTHONPATH=:/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
+- Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory such that its path matches: `/home/pi/CatPreyAnalyzer` (check your `PYTHONPATH=/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
 
 - Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
@@ -21,12 +21,12 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Create an `.env` file (use `.env.example` as a template) in the root directory and fill in your secrets. This will be sourced when running `cascade.py`. The syntax of `.env` files supported by python-dotenv is similar to that of Bash. Take a look at [python-dotenv](https://pypi.org/project/python-dotenv/).
 
-Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`. Set your preferences, camera URLs, video resolutions and the horizontal/vertical fliping options. After that, you can start `cascade.py` like this:
+Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`. Set your preferences, camera URLs, video resolutions and the horizontal/vertical flipping options. After that, you can start `cascade.py` like this:
 
 ```bash
 python3 cascade.py --camera cam2 --log info
 ```
-- You can also specify a preferred backend for un-/locking the catflap if you configured the correct credentials for both. Select it by using the optional attribute `--backend`, which can be set to either 'surepy' or 'ha'. **NOTE**: if the chosen backend doesn’t work, there’s **no fall-back** to the other one, an error will be shown instead!
+- You can also specify a preferred backend for unlocking/locking the catflap if you configured the correct credentials for both. Select it by using the optional attribute `--backend`, which can be set to either 'surepy' or 'ha'. **NOTE**: if the chosen backend doesn’t work, there’s **no fall-back** to the other one, an error will be shown instead!
 
 
 Here's a full help menu of the main script cascade.py:
@@ -54,7 +54,7 @@ options:
   -c CAMERA, --camera CAMERA
                         Camera key as defined in config.py (e.g., cam1, cam2)
   -b {surepy,ha}, --backend {surepy,ha}
-                        Force use of one of the following backends for catflap un/locking)
+                        Force use of one of the following backends for catflap unlocking/locking
                                       - surepy (use surepy module)
                                       - ha (use homeassistant REST/Webhook)
                                       make sure to define correct settings in the .env file

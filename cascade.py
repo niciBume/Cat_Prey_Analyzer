@@ -104,7 +104,7 @@ def main():
             type=str,
             choices= ['surepy', 'ha'],
             required=False,
-            help="""Force use of one of the following backends for catflap un-/locking
+            help="""Force use of one of the following backends for catflap unlocking/locking
               - surepy (use surepy module)
               - ha (use homeassistant REST/Webhook)
               make sure to define correct settings in the .env file
@@ -166,10 +166,10 @@ def main():
     use_ha = use_ha()
     use_surepet = False
     if BACKEND == "surepy" and use_surepy:
-        logging.info("ℹ️  Using surepy module for un/locking.")
+        logging.info("ℹ️  Using surepy module for unlocking/locking.")
         use_surepet = "surepy"
     if BACKEND == "ha" and use_ha:
-        logging.info("ℹ️  Using HA webhook for un/locking.")
+        logging.info("ℹ️  Using HA webhook for unlocking/locking.")
         use_surepet = "ha"
     if BACKEND is None:
         use_surepet = use_surepy or use_ha
@@ -463,7 +463,7 @@ class Sequential_Cascade_Feeder():
                     self.last_unlock_state = None
                     return True
                 else:
-                    self.bot.send_text("❌ Error re-locking HA catflap.")
+                    self.bot.send_text("❌ Error relocking HA catflap.")
                     return False
             else:
                 self.bot.send_text("❌ Failed to unlock HA catflap.")
@@ -506,7 +506,7 @@ class Sequential_Cascade_Feeder():
                     self.last_unlock_state = None
                     return True   # <-- ADD THIS for successful sequence
                 else:
-                    self.bot.send_text("❌ Error re-locking catflap via Sure Petcare.")
+                    self.bot.send_text("❌ Error relocking catflap via Sure Petcare.")
                     return False
             else:
                 self.bot.send_text("❌ Failed to unlock catflap via Sure Petcare.")
@@ -1192,7 +1192,7 @@ class NodeBot():
         if self.node_last_casc_img is not None:
             caption = 'Last Cascade picture:'
             self.send_img(self.node_last_casc_img, caption)
-            logging.info("Sending last cascade image to bot")
+            logging.info("ℹ️  Sending last cascade image to bot")
         else:
             self.send_text("No casc img available yet…")
 
