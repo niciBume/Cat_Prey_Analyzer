@@ -201,10 +201,8 @@ def main():
                     daemon=True
                 )
                 sq_cascade.camera_process.start()
-                try:
+                with contextlib.suppress(Exception):
                     bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
-                except Exception:
-                    pass
             else:
                 # Defensive: shouldn't happen, but wait and retry
                 time.sleep(0.5)
@@ -223,10 +221,8 @@ def main():
                         msg = f"❌ [WATCHDOG]: Main analysis loop appears stuck! No heartbeat for {elapsed:.1f} seconds."
                         print(msg)
                         logging.error(msg)
-                        try:
+                        with contextlib.suppress(Exception):
                             bot_instance.send_text(msg)
-                        except Exception:
-                            pass
                         # Optional: Take further action, e.g. force shutdown or restart
                         # os._exit(2)
             except Exception as e:
@@ -398,10 +394,8 @@ class Sequential_Cascade_Feeder():
 
                 print(result_holder["msg"])
                 if hasattr(self, "bot"):
-                    try:
+                    with contextlib.suppress(Exception):
                         self.bot.send_text(result_holder["msg"])
-                    except Exception:
-                        pass
 
             if self.last_unlock_method == "ha":
                 try:
@@ -412,17 +406,13 @@ class Sequential_Cascade_Feeder():
                 except Exception as e:
                     msg = f"❌ Failed to re-lock via HA on exit: {e}"
                     print(msg)
-                    try:
+                    with contextlib.suppress(Exception):
                         self.bot.send_text(msg)
-                    except Exception:
-                        pass
         else:
             msg = "ℹ️  No catflap unlock detected, skipping re-lock on exit."
             print(msg)
-            try:
+            with contextlib.suppress(Exception):
                 self.bot.send_text(msg)
-            except Exception:
-                pass
 
     # ── Home Assistant flow ──
     def ha_flow(self):
@@ -1342,11 +1332,9 @@ def handle_exit(signum=None, frame=None, exc=None):
             print(f"Error shutting down camera process: {e}")
 
     # Send the final shutdown confirmation
-    try:
+    with contextlib.suppress(Exception):
         if bot_instance:
             bot_instance.send_text("✅ Cat Prey Analyzer process has shut down cleanly.")
-    except Exception:
-        pass
 
     # Now stop the bot cleanly
     try:
