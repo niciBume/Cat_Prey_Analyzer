@@ -36,7 +36,7 @@ Notes:
 
 import sys
 import os
-import cv2
+import cv2 # print(cv2.getBuildInformation())
 import time
 import csv
 import telegram
@@ -51,6 +51,7 @@ import traceback
 import numpy as np
 import xml.etree.ElementTree as ET
 import multiprocessing
+from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
 from pathlib import Path
 from datetime import datetime
@@ -61,7 +62,6 @@ from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet
 from camera_class import Camera
 from surepy import Surepy
 from surepy.entities.devices import Flap
-from contextlib import contextmanager
 
 # --- Watchdog Thread for Main Analysis Loop ---
 WATCHDOG_TIMEOUT = 120  # seconds
@@ -201,7 +201,7 @@ def main():
                     daemon=True
                 )
                 sq_cascade.camera_process.start()
-                with contextlib.suppress(Exception):
+                with suppress(Exception):
                     bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
             else:
                 # Defensive: shouldn't happen, but wait and retry
@@ -221,7 +221,7 @@ def main():
                         msg = f"❌ [WATCHDOG]: Main analysis loop appears stuck! No heartbeat for {elapsed:.1f} seconds."
                         print(msg)
                         logging.error(msg)
-                        with contextlib.suppress(Exception):
+                        with suppress(Exception):
                             bot_instance.send_text(msg)
                         # Optional: Take further action, e.g. force shutdown or restart
                         # os._exit(2)
@@ -320,6 +320,8 @@ class Sequential_Cascade_Feeder():
         logging.debug(f"Log Dir: {self.log_dir}")
         self.log_level_str = log_level_str
         self.last_heartbeat = time.time()
+        self.done_timestamp = None
+        self.done_timestamp_last = None
 
     def pause_camera(self, open_time):
         if self.camera_process is not None and self.camera_process.is_alive():
@@ -394,7 +396,7 @@ class Sequential_Cascade_Feeder():
 
                 print(result_holder["msg"])
                 if hasattr(self, "bot"):
-                    with contextlib.suppress(Exception):
+                    with suppress(Exception):
                         self.bot.send_text(result_holder["msg"])
 
             if self.last_unlock_method == "ha":
@@ -406,12 +408,12 @@ class Sequential_Cascade_Feeder():
                 except Exception as e:
                     msg = f"❌ Failed to re-lock via HA on exit: {e}"
                     print(msg)
-                    with contextlib.suppress(Exception):
+                    with suppress(Exception):
                         self.bot.send_text(msg)
         else:
             msg = "ℹ️  No catflap unlock detected, skipping re-lock on exit."
             print(msg)
-            with contextlib.suppress(Exception):
+            with suppress(Exception):
                 self.bot.send_text(msg)
 
     # ── Home Assistant flow ──
@@ -720,6 +722,10 @@ class Sequential_Cascade_Feeder():
             while not self.shutdown_flag.is_set():
                 try:
                     self.last_heartbeat = time.time()
+                    if len(self.main_deque) > 0 and self.done_timestamp != self.done_timestamp_last:
+                        timestamp_bot, frame_bot = self.main_deque[-1] # newest frame for bot sendlivepic, if queue not empty
+                        self.bot.node_live_img = frame_bot
+                        self.bot.node_live_timestamp = timestamp_bot
                     if len(self.main_deque) > self.fps_offset:
                         logging.debug(f"Deque type: {type(self.main_deque)}, ID={id(self.main_deque)}, max_queue_len={self.max_queue_len}, current len={len(self.main_deque)}")
                         self.queue_worker()
@@ -757,15 +763,15 @@ class Sequential_Cascade_Feeder():
         timestamp, frame = self.main_deque[self.fps_offset]
         cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
         logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
-        done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
-        logging.debug(f"Timestamp at Done Runtime: {done_timestamp}")
+        self.done_timestamp_last = self.done_timestamp
+        self.done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+        logging.debug(f"Timestamp at Done Runtime: {self.done_timestamp}")
 
-        overhead = datetime.strptime(done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(timestamp, "%Y_%m_%d_%H-%M-%S.%f")
+        overhead = datetime.strptime(self.done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(timestamp, "%Y_%m_%d_%H-%M-%S.%f")
         logging.debug(f"Overhead: {overhead.total_seconds():.2f} seconds")
 
         # Add this such that the bot has some info
         self.bot.node_queue_info = len(self.main_deque)
-        self.bot.node_live_img = frame
         self.bot.node_over_head_info = overhead.total_seconds()
 
         # Always delete the left part
@@ -791,7 +797,7 @@ class Sequential_Cascade_Feeder():
                 self.FACE_FOUND_FLAG = True
 
             logging.debug(f"CUMULUS: {self.cumulus_points}")
-            self.queues_cumuli_in_event.append((len(self.main_deque),self.cumulus_points, done_timestamp))
+            self.queues_cumuli_in_event.append((len(self.main_deque),self.cumulus_points, self.done_timestamp))
 
             #Check the cumuli points and set flags if necessary
             if self.face_counter > 0 and self.PATIENCE_FLAG:
@@ -1120,10 +1126,11 @@ class NodeBot():
             self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
 
         self.node_live_img = None
+        self.node_live_timestamp = None
         self.node_queue_info = None
+        self.node_over_head_info = None
         self.node_status = None
         self.node_last_casc_img = None
-        self.node_over_head_info = None
         self.node_let_in_flag = None
 
         #Init the listener
@@ -1187,11 +1194,9 @@ class NodeBot():
             self.send_text("No casc img available yet…")
 
     def bot_send_live_pic(self, bot, update):
-        # self.capture_new_image() # only needed if you always want the freshest picture captured from the camera directly
-        # time.sleep(0.2)          # else, it will just send the last captured pic from the queue
         if self.node_live_img is not None:
             # Encode image to JPEG format
-            caption = 'Last Live picture:'
+            caption = f'Last Live picture, timestamp {self.node_live_timestamp}'
             self.send_img(self.node_live_img, caption)
             logging.info("ℹ️  Sending live image to bot")
         else:
@@ -1332,7 +1337,7 @@ def handle_exit(signum=None, frame=None, exc=None):
             print(f"Error shutting down camera process: {e}")
 
     # Send the final shutdown confirmation
-    with contextlib.suppress(Exception):
+    with suppress(Exception):
         if bot_instance:
             bot_instance.send_text("✅ Cat Prey Analyzer process has shut down cleanly.")
 
