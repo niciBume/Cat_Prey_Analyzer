@@ -147,7 +147,7 @@ class Camera:
                 # Prime the pipeline: discard first 10 frames to avoid grey/noise/buffered frames
                 for _ in range(10):
                     self.cap.read()
-                logging.info(f"GStreamer pipeline opened successfully and primed.")
+                logging.info("GStreamer pipeline opened successfully and primed.")
             except Exception as e:
                 logging.error(f"Failed to open camera stream with GStreamer: {e}")
                 if self.restart_attempts < self.max_restart_attempts:
@@ -156,7 +156,7 @@ class Camera:
                     time.sleep(1)
                     self._restart_camera()
                 else:
-                    raise RuntimeError(f"Failed to initialize camera after {self.max_restart_attempts} attempts")
+                    raise RuntimeError(f"Failed to initialize camera after {self.max_restart_attempts} attempts") from e
 
     def _restart_camera(self):
         logging.warning("Restarting camera...")
