@@ -105,7 +105,7 @@ actions:
 # NOTE on cv2 frame capture method
 I added GStreamer as another method of capturing frames, since I had problems on my camera with garbled images captured through openCV VideoCapture. GStreamer seems to be more reliable anyway. For this to work, you have to install the debian system package of OpenCV, opencv-python from PyPI does not have GStreamer support. If you want to use this, you have to do the following steps:
 
- - Install GStreamer and plugins
+- Install GStreamer and plugins
 
 ```bash
 sudo apt update
@@ -117,13 +117,13 @@ sudo apt install gstreamer1.0-tools \
   gstreamer1.0-libav
 ```
 
- - Remove pip-installed OpenCV if present
+- Remove pip-installed OpenCV if present
 
 ```bash
 pip uninstall opencv-python opencv-contrib-python
 ```
 
- - Install OpenCV from apt
+- Install OpenCV from apt
 
 ```bash
 sudo apt install python3-opencv
@@ -131,7 +131,7 @@ sudo apt install python3-opencv
 
 This will install OpenCV system-wide (and you will use import cv2 as usual).
 
- - You also have to downgrade NumPy to <2.0
+- You also have to downgrade NumPy to <2.0
 
 ```bash
 pip install "numpy<2"
@@ -139,7 +139,7 @@ pip install "numpy<2"
 
 If you need both NumPy 2 and OpenCV with GStreamer support, you must build OpenCV from source, making sure that NumPy 2.x headers are found at build time and that GStreamer is enabled. This is not recommended for most users.
 
- - Edit `cascade.py` and change the following line [62]:
+- Edit `cascade.py` and change the following line [62]:
 
 from this:
 
