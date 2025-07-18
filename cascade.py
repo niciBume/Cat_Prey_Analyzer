@@ -67,7 +67,7 @@ from surepy.entities.devices import Flap
 WATCHDOG_TIMEOUT = 120  # seconds
 
 def main():
-    global sq_cascade, bot_instance, cat_cam_py
+    global sq_cascade, bot_instance
     manager = multiprocessing.Manager()
 
     # Set up argument parser
@@ -175,8 +175,6 @@ def main():
         use_surepet = use_surepy or use_ha
     logging.debug(f"use_surepet={use_surepet}")
 
-    cat_cam_py = str(Path(os.getcwd()).parents[0])
-    logging.debug(f"CatCamPy: {cat_cam_py}")
     logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
 
     sq_cascade = Sequential_Cascade_Feeder(manager, CAMERA_KEY, use_surepy, use_ha, use_surepet, log_level_str)
@@ -844,7 +842,7 @@ class Sequential_Cascade_Feeder():
     def single_debug(self):
         start_time = time.time()
         target_img_name = "dummy_img.jpg"
-        target_img = cv2.imread(os.path.join(cat_cam_py, "CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg"))
+        target_img = cv2.imread(os.path.join(os.getcwd(), "readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg"))
         cascade_obj = self.feed(target_img=target_img, img_name=target_img_name)[1]
         logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
         return cascade_obj
@@ -1241,7 +1239,7 @@ class NodeBot():
 
 class DummyDQueue():
     def __init__(self):
-        self.target_img = cv2.imread(os.path.join(cat_cam_py, 'CatPreyAnalyzer/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
+        self.target_img = cv2.imread(os.path.join(os.getcwd(), 'readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg'))
 
     def dummy_queue_filler(self, main_deque):
         while(True):
@@ -1252,8 +1250,8 @@ class DummyDQueue():
 
 class Spec_Event_Handler():
     def __init__(self):
-        self.img_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/input')
-        self.out_dir = os.path.join(cat_cam_py, 'CatPreyAnalyzer/debug/output')
+        self.img_dir = os.path.join(os.getcwd(), 'debug/input')
+        self.out_dir = os.path.join(os.getcwd(), 'debug/output')
 
         self.img_list = [x for x in sorted(os.listdir(self.img_dir)) if'.jpg' in x]
         self.base_cascade = Cascade()
