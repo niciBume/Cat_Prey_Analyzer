@@ -11,7 +11,7 @@ This isn't the first approach at solving the mentioned problem! There have been 
 The difference of this project however is that it aims to solve *general* cat-prey detection through a vision based approach. Meaning that this should work for any cat! 
 
 # How to use the Code
-The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net/de/products/rb-camera-IR_PRO) attached. If you have knowledge regarding Keras, you can also run the models on your own, as the .h5 files can be found in the /models directory (check the input shapes, as they can vary). Nonetheless, I will explain the prerequesites to run this project on the RPI4 with the attached infrared camera:
+The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net/de/products/rb-camera-IR_PRO) attached. If you have knowledge regarding Keras, you can also run the models on your own, as the .h5 files can be found in the /models directory (check the input shapes, as they can vary). Nonetheless, I will explain the prerequisites to run this project on the RPI4 with the attached infrared camera:
 
 - Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory such that its path matches: `/home/pi/CatPreyAnalyzer` (check your `PYTHONPATH=/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
 
