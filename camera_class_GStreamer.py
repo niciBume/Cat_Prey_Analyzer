@@ -227,7 +227,7 @@ class Camera:
         last_frame = None
         num_prefill = self.fps_offset + 1
         logging.debug("Starting PREFILL loop")
-        for idx in range(num_prefill):
+        for _ in range(num_prefill):
             frame = self._capture_frame()
             if frame is None:
                 logging.error("[PREFILL]: Frame capture failed (frame is None)!")
