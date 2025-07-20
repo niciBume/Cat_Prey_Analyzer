@@ -2,7 +2,7 @@
 If you own a cat that has the freedom to go outside, then you probably are familiar with the issue of your feline bringing home prey. This leads to a clean up effort that one wants to avoid!
 This project aims to perform Cat Prey Detection with Deep Learning on any cat in any environment. For a brief and light intro in what it does, check out the [Raspberry Pi blog post](https://www.raspberrypi.org/blog/deep-learning-cat-prey-detector/) about it. The idea is that you can use the output of this system to trigger your catflap such that it locks out your cat, if it wants to enter with prey.
 
-<img src="/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" alt="Lenna cascade sample frame" width="400">
+<img src="readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" alt="Lenna cascade sample frame" width="400">
 
 The script can connect to your [Sure Petcare Catflap](https://www.surepetcare.com/en-us/pet-doors/microchip-cat-flap-connect), either by logging directly into your account through the Surepy module ([surepy on GitHub](https://github.com/benleb/surepy)) or via Home Assistant ([hass.io](https://hass.io)), or both. It reads settings from `config.py` and environment variables — first attempts Surepy, then falls back to Home Assistant.
 
@@ -24,7 +24,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`. Set your preferences, camera URLs, video resolutions and the horizontal/vertical flipping options. After that, you can start `cascade.py` like this:
 
 ```bash
-python3 cascade.py --camera cam2 --log info
+./cascade.py --camera_id cam2 --log info
 ```
 - You can also specify a preferred backend for unlocking/locking the catflap if you configured the correct credentials for both. Select it by using the optional attribute `--backend`, which can be set to either 'surepy' or 'ha'. **NOTE**: if the chosen backend doesn’t work, there’s **no fall-back** to the other one, an error will be shown instead!
 
