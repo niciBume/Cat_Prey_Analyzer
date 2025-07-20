@@ -1,6 +1,6 @@
 # Introduction
-If you own a cat that has the freedom to go outside, then you probably are familliar with the issue of your feline bringing home prey. This leads to a clean up effort that one wants to avoid!
-This project aims to perform Cat Prey Detection with Deep Learning on any cat in any environement. For a brief and light intro in what it does, check out the [Raspberry Pi blog post](https://www.raspberrypi.org/blog/deep-learning-cat-prey-detector/) about it. The idea is that you can use the output of this system to trigger your catflap such that it locks out your cat, if it wants to enter with prey.
+If you own a cat that has the freedom to go outside, then you probably are familiar with the issue of your feline bringing home prey. This leads to a clean up effort that one wants to avoid!
+This project aims to perform Cat Prey Detection with Deep Learning on any cat in any environment. For a brief and light intro in what it does, check out the [Raspberry Pi blog post](https://www.raspberrypi.org/blog/deep-learning-cat-prey-detector/) about it. The idea is that you can use the output of this system to trigger your catflap such that it locks out your cat, if it wants to enter with prey.
 
 <img src="/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" alt="Lenna cascade sample frame" width="400">
 
@@ -48,7 +48,7 @@ options:
   -l {info,warning,error,critical,debug}, --log {info,warning,error,critical,debug}
                         Set the logging level (default=info).
   -c CAMERA_ID, --camera_id CAMERA_ID
-                        Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified).
+                        Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified.
   -b {surepy,ha}, --backend {surepy,ha}
                         Force use of one of the following backends for catflap unlocking/locking:
                                       - surepy (use surepy module)
