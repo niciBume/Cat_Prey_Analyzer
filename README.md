@@ -138,7 +138,7 @@ pip install "numpy<2"
 
 If you need both NumPy 2 and OpenCV with GStreamer support, you must build OpenCV from source, making sure that NumPy 2.x headers are found at build time and that GStreamer is enabled. This is not recommended for most users.
 
-- Edit `cascade.py` and change the following line [62]:
+- Edit `cascade.py` and change the following import statement:
 
 from this:
 

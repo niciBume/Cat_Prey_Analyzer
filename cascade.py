@@ -117,9 +117,9 @@ def main():
     if (CAMERA_ID):
         cam_cfg = config.CAMERA_OVERRIDES.get(CAMERA_ID)
         camera_host = urlparse(cam_cfg.get('url')).hostname
-        camera_ssh_username = config.CAMERA_SSH_USERNAME if hasattr(config, "CAMERA_SSH_USERNAME" or not config.CAMERA_SSH_USERNAME in (None, "" , 0)) else None
-        camera_remote_command = config.CAMERA_REMOTE_COMMAND if hasattr(config, "CAMERA_REMOTE_COMMAND" or not config.CAMERA_REMOTE_COMMAND in (None, "", 0)) else None
-        camera_ssh_key_file = config.CAMERA_SSH_KEY_FILE if hasattr(config, "CAMERA_SSH_KEY_FILE" or not config.CAMERA_SSH_KEY_FILE in (None, "", 0)) else None
+        camera_ssh_username = config.CAMERA_SSH_USERNAME if hasattr(config, "CAMERA_SSH_USERNAME") and config.CAMERA_SSH_USERNAME not in (None, "", 0) else None
+        camera_remote_command = config.CAMERA_REMOTE_COMMAND if hasattr(config, "CAMERA_REMOTE_COMMAND") and config.CAMERA_REMOTE_COMMAND not in (None, "", 0) else None
+        camera_ssh_key_file = config.CAMERA_SSH_KEY_FILE if hasattr(config, "CAMERA_SSH_KEY_FILE") and config.CAMERA_SSH_KEY_FILE not in (None, "", 0) else None
 
     log_level_str = args.log.upper()
     #print(f"LOG LEVEL IN MAIN: {log_level_str}") # DEBUG print
@@ -208,7 +208,7 @@ def main():
                 sq_cascade.camera_process.start()
                 with suppress(Exception):
                     bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
-                    if (camera_host, camera_ssh_username, camera_remote_command, camera_ssh_key_file):
+                    if all([camera_host, camera_ssh_username, camera_remote_command, camera_ssh_key_file]):
                         #print(f"DEBUG: camera_host={camera_host}, camera_ssh_username={camera_ssh_username}, camera_remote_command={camera_remote_command}, camera_ssh_key_file={camera_ssh_key_file}")
                         logging.info("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
                         bot_instance.send_text("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
