@@ -99,7 +99,7 @@ def main():
     parser.add_argument(
             '-c', '--camera_id',
             type=str,
-            help="Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified)."
+            help="Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified."
     )
     parser.add_argument(
             '-b', '--backend',
