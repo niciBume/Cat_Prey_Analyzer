@@ -28,36 +28,35 @@ python3 cascade.py --camera cam2 --log info
 ```
 - You can also specify a preferred backend for unlocking/locking the catflap if you configured the correct credentials for both. Select it by using the optional attribute `--backend`, which can be set to either 'surepy' or 'ha'. **NOTE**: if the chosen backend doesn’t work, there’s **no fall-back** to the other one, an error will be shown instead!
 
+- If you provide 'CAMERA_SSH_USERNAME', 'CAMERA_REMOTE_COMMAND' and 'CAMERA_SSH_KEY_FILE' in `config.py`, the script will restart your camera through SSH after 'MAX_FRAME_FAILURES' was reached and capture process was killed.
 
 Here's a full help menu of the main script cascade.py:
 
 ```bash
 $ python3 cascade.py --help
-usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA] [-b {surepy,ha}]
+usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA_ID] [-b {surepy,ha}]
 
-    Cat Prey Analyzer - Smart Cat Flap Monitor
+        Cat Prey Analyzer - Smart Cat Flap Monitor
 
-    This tool uses camera input and machine learning to detect
-    whether a cat is bringing prey, managing catflap control
-    either through the python surepy module or through homeassistant.
-    It communicates with the user and can be controlled through telegram app.
-
-    Create a [hidden] .env file containing your secrets and 'source' it before
-    firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
-    You can also tweak the rest of the values in config.py for better performance.
-
+        This tool uses camera input and machine learning to detect
+        whether a cat is bringing prey, managing catflap control,
+        either through the python surepy module or through homeassistant.
+        It communicates with the user (and can be controlled through) the telegram messaging app.
 
 options:
   -h, --help            show this help message and exit
   -l {info,warning,error,critical,debug}, --log {info,warning,error,critical,debug}
-                        Set the logging level
-  -c CAMERA, --camera CAMERA
-                        Camera key as defined in config.py (e.g., cam1, cam2)
+                        Set the logging level (default=info).
+  -c CAMERA_ID, --camera_id CAMERA_ID
+                        Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified).
   -b {surepy,ha}, --backend {surepy,ha}
-                        Force use of one of the following backends for catflap unlocking/locking
+                        Force use of one of the following backends for catflap unlocking/locking:
                                       - surepy (use surepy module)
                                       - ha (use homeassistant REST/Webhook)
-                                      make sure to define correct settings in the .env file
+
+        Edit 'config.py' to reflect your setup and tweak the values for better performance.
+        Create a [hidden] '.env' file containing your secrets from the '.env.example' template,
+        see 'https://pypi.org/project/python-dotenv/'.
 ```
 
 
