@@ -2,9 +2,9 @@
 If you own a cat that has the freedom to go outside, then you probably are familliar with the issue of your feline bringing home prey. This leads to a clean up effort that one wants to avoid!
 This project aims to perform Cat Prey Detection with Deep Learning on any cat in any environement. For a brief and light intro in what it does, check out the [Raspberry Pi blog post](https://www.raspberrypi.org/blog/deep-learning-cat-prey-detector/) about it. The idea is that you can use the output of this system to trigger your catflap such that it locks out your cat, if it wants to enter with prey.
 
-<img src="/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" width="400">
+<img src="/readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" alt="Lenna cascade sample frame" width="400">
 
-The script can connect to your [Sure Petcare Catflap](https://www.surepetcare.com/en-us/pet-doors/microchip-cat-flap-connect), either by logging directly into your account through the Surepy module ([surepy on GitHub](https://github.com/benleb/surepy)) or via Home Assistant ([hass.io](https://hass.io)), or both. It reads settings from `config.py` and environment variables—first attempting Surepy, then falling back to Home Assistant.
+The script can connect to your [Sure Petcare Catflap](https://www.surepetcare.com/en-us/pet-doors/microchip-cat-flap-connect), either by logging directly into your account through the Surepy module ([surepy on GitHub](https://github.com/benleb/surepy)) or via Home Assistant ([hass.io](https://hass.io)), or both. It reads settings from `config.py` and environment variables — first attempts Surepy, then falls back to Home Assistant.
 
 # Related work
 This isn't the first approach at solving the mentioned problem! There have been other equally (if not better) valid approaches such as the [Catcierge](https://github.com/JoakimSoderberg/catcierge) which analyzes the silhouette of the cat a very recent approach of the [AI powered Catflap](https://www.theverge.com/tldr/2019/6/30/19102430/amazon-engineer-ai-powered-catflap-prey-ben-hamm).
@@ -33,7 +33,7 @@ python3 cascade.py --camera cam2 --log info
 Here's a full help menu of the main script cascade.py:
 
 ```bash
-$ python3 cascade.py --help
+$ ./cascade.py --help
 usage: cascade.py [-h] [-l {info,warning,error,critical,debug}] [-c CAMERA_ID] [-b {surepy,ha}]
 
         Cat Prey Analyzer - Smart Cat Flap Monitor
@@ -58,7 +58,6 @@ options:
         Create a [hidden] '.env' file containing your secrets from the '.env.example' template,
         see 'https://pypi.org/project/python-dotenv/'.
 ```
-
 
 By following all these steps, you should now be greeted by your Telegram Bot at startup:
 
