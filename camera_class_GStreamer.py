@@ -1,3 +1,31 @@
+# camera_class_GStreamer.py
+
+"""
+Cat Prey Analyzer - Camera Acquisition & Frame Queue Logic
+
+Purpose:
+    - Handles all camera hardware interaction, frame acquisition, and buffering for downstream analysis.
+    - Implements motion detection and periodic (heartbeat) frame capture in a robust, pause-aware loop.
+    - Supplies frames to the main analysis pipeline via a thread/process-safe queue.
+
+Features:
+    - Motion-triggered frame capture with user-configurable sensitivity (motion threshold).
+    - Heartbeat capture: Ensures a fresh frame is queued even in absence of motion.
+    - Queue pre-fill on startup for zero-latency user requests.
+    - Pausing: Can pause and clear the frame queue on system/user command (e.g., during catflap opening).
+    - Multi-camera support: USB cams, PiCam (libcamera), RTSP/MJPEG/IP cams, and local video files.
+    - Orientation and error handling: Flip, restart, and recover on camera errors.
+    - Detailed logging of all capture, queue, and motion events.
+
+Integration:
+    - Intended to run as a subprocess, controlled by the main cascade.py.
+    - Receives inter-process signals/events for pausing and shutdown.
+
+How to Tune:
+    - Adjust motion sensitivity, heartbeat interval, and queue size in config.py.
+    - Camera selection and overrides via CAMERA_OVERRIDES in config.py.
+"""
+
 import os
 import cv2
 import time
@@ -9,23 +37,25 @@ import traceback
 import logging
 from datetime import datetime
 
+# Conditionally import Picamera2 if available
 try:
     from picamera2 import Picamera2
     from libcamera import Transform
     PICAMERA_AVAILABLE = True
 except ImportError:
     PICAMERA_AVAILABLE = False
-    Picamera2 = Transform = None                        # type: ignore
+    Picamera2 = Transform = None
 
 class Camera:
-    def __init__(self, q, camera_key, shutdown_flag, pause_event=None, pause_duration=None, log_level_str="INFO"):
+    def __init__(self, q, camera_id, shutdown_flag, pause_event=None, pause_duration=None, log_level_str="INFO"):
         self.q = q
-        self.camera_key = camera_key
+        self.camera_id = camera_id
         self.shutdown_flag = shutdown_flag
         self.pause_event = pause_event or multiprocessing.Manager().Event()
         self.pause_duration = pause_duration or multiprocessing.Manager().Value('d', 0.0)
         self.restart_attempts = 0
         self.max_restart_attempts = 5
+        self.max_frame_failures = getattr(config, "self.max_frame_failures", 5)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.heartbeat_interval = getattr(config, "HEARTBEAT_INTERVAL", 60)  # seconds
@@ -44,24 +74,27 @@ class Camera:
         logging.info(f"Motion threshold is set to {self.motion_threshold} / ({threshold_category})")
 
         # Load config, fallback to default
-        cam_cfg = config.CAMERA_OVERRIDES.get(camera_key, config.CAMERA_OVERRIDES['default'])
+        cam_cfg = config.CAMERA_OVERRIDES.get(camera_id, config.CAMERA_OVERRIDES['default'])
         self.base_url = cam_cfg.get('url')
         self.cam_x = cam_cfg.get('cam_width', config.CAMERA_OVERRIDES['default']['cam_width'])
         self.cam_y = cam_cfg.get('cam_height', config.CAMERA_OVERRIDES['default']['cam_height'])
         self.hflip = cam_cfg.get('hflip', config.CAMERA_OVERRIDES['default']['hflip'])
         self.vflip = cam_cfg.get('vflip', config.CAMERA_OVERRIDES['default']['vflip'])
 
+        # Compose URL with credentials if needed
         self.camera_url = self._compose_url_with_creds()
         self.camera_type = self._detect_camera_type()
-        logging.info(f"Camera settings: camera_key={self.camera_key}, base_url={self.base_url}, type={self.camera_type}, width={self.cam_x}, height={self.cam_y}, hflip={self.hflip}, vflip={self.vflip}")
+        logging.info(f"Camera settings: camera_id={self.camera_id}, base_url={self.base_url}, type={self.camera_type}, width={self.cam_x}, height={self.cam_y}, hflip={self.hflip}, vflip={self.vflip}")
 
     def _compose_url_with_creds(self):
         if not self.base_url:
             return None
+        # Only add credentials if needed
         if self.base_url.startswith("rtsp://") or self.base_url.startswith("http://"):
-            user = os.getenv(f"{self.camera_key.upper()}_USER")
-            pw = os.getenv(f"{self.camera_key.upper()}_PASS")
+            user = os.getenv(f"{self.camera_id.upper()}_USER")
+            pw = os.getenv(f"{self.camera_id.upper()}_PASS")
             if user and pw:
+                # Insert credentials into url after protocol
                 proto, rest = self.base_url.split("://", 1)
                 return f"{proto}://{user}:{pw}@{rest}"
         return self.base_url
@@ -173,10 +206,15 @@ class Camera:
         self.restart_attempts = 0
 
     def _process_motion_detection(self, frame, prev_gray):
+        """
+        Detects motion between the given frame and the previous grayscale frame.
+        Returns (gray, motion_detected), where gray is the current grayscale frame.
+        """
         if frame is None:
             logging.warning("Received empty frame for motion detection.")
             return prev_gray, False
 
+        # Convert to grayscale and blur to reduce noise
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
@@ -184,9 +222,13 @@ class Camera:
         motion_pixels = 0
 
         if prev_gray is not None:
+            # Compute absolute difference between current and previous frame
             frame_delta = cv2.absdiff(prev_gray, gray)
+            # Threshold the delta image
             thresh = cv2.threshold(frame_delta, 25, 255, cv2.THRESH_BINARY)[1]
+            # Dilate to fill in holes, making motion regions more solid
             thresh = cv2.dilate(thresh, None, iterations=2)
+            # Count the number of changed pixels
             motion_pixels = cv2.countNonZero(thresh)
             if motion_pixels > self.motion_threshold:
                 motion_detected = True
@@ -216,13 +258,13 @@ class Camera:
 
     def main_capture_loop(self):
         consec_failures = 0
-        MAX_FRAME_FAILURES = 5
 
         i = 0
-        self.last_heartbeat_enqueue_time = time.time()
+        self.last_enqueue_time = time.time()
         logging.debug(f"MAIN_CAPTURE_LOOP STARTED in PID {os.getpid()}")
         logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
 
+        # --- Prefill queue and initialize prev_gray ---
         prev_gray = None
         last_frame = None
         num_prefill = self.fps_offset + 1
@@ -232,8 +274,8 @@ class Camera:
             if frame is None:
                 logging.error("[PREFILL]: Frame capture failed (frame is None)!")
                 consec_failures += 1
-                if consec_failures >= MAX_FRAME_FAILURES:
-                    logging.error(f"[PREFILL]: Too many consecutive frame failures ({MAX_FRAME_FAILURES}), exiting camera process for restart.")
+                if consec_failures >= self.max_frame_failures:
+                    logging.error(f"[PREFILL]: Too many consecutive frame failures ({self.max_frame_failures}), exiting camera process for restart.")
                     sys.exit(13)
                 time.sleep(1)
                 continue
@@ -253,9 +295,11 @@ class Camera:
 
         logging.debug("DONE PREFILL - entering main loop")
 
+        # --- Main capture loop ---
         while not self.shutdown_flag.is_set():
             logging.debug(f"Queue type: {type(self.q)}, queue id: {id(self.q)}, length: {len(self.q)}")
             try:
+                # Handle pause event
                 if self.pause_event.is_set():
                     pause_secs = self.pause_duration.value
                     logging.info(f"Pausing queue for {pause_secs} seconds and clearing all frames [{len(self.q)}]")
@@ -268,20 +312,22 @@ class Camera:
                     self.pause_event.clear()
                     continue
 
+                # Grab a frame
                 now = time.time()
                 frame = self._capture_frame()
                 if frame is None:
                     logging.error("Frame capture failed (frame is None) in main loop.")
                     consec_failures += 1
-                    if consec_failures >= MAX_FRAME_FAILURES:
-                        logging.error(f"Too many consecutive frame failures ({MAX_FRAME_FAILURES}), exiting camera process for restart.")
+                    if consec_failures >= self.max_frame_failures:
+                        logging.error(f"Too many consecutive frame failures ({self.max_frame_failures}), exiting camera process for restart.")
                         sys.exit(13)
                     time.sleep(1)
                     continue
                 else:
                     consec_failures = 0
-                logging.debug(f"Enqueued frame at {datetime.now(config.TIMEZONE_OBJ).strftime('%Y_%m_%d_%H-%M-%S.%f')} | Queue ID={id(self.q)} length: {len(self.q)}")
+                logging.debug(f"Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
 
+                # Try motion detection
                 try:
                     gray, motion_detected = self._process_motion_detection(frame, prev_gray)
                 except Exception as e:
@@ -292,22 +338,35 @@ class Camera:
                 logging.debug(f"Motion detected: {motion_detected}")
 
                 timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                # Motion or heartbeat: queue frame
+                heartbeat_due = (now - self.last_enqueue_time) > self.heartbeat_interval
+
                 if motion_detected:
+                    # Only enqueue motion frame
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        logging.info(f"[MOTION] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
+                        self.last_enqueue_time = now
+                        logging.debug(f"[MOTION] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
                     else:
-                        logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
-                elif (now - self.last_heartbeat_enqueue_time) > self.heartbeat_interval:
+                        logging.warning(f"Queue is full {self.max_queue_len}, dropping motion frame.")
+
+                elif heartbeat_due:
+                    # Only enqueue heartbeat if no motion was detected
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
                         logging.info(f"🌙 [HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
-                        logging.warning(f"Queue is full {self.max_queue_len}, dropping frame.")
-                    self.last_heartbeat_enqueue_time = now
+                        logging.warning(f"""
+                                        ### THIS SHOULDN'T HAPPEN ### Queue is full {self.max_queue_len}, dropping heartbeat frame!
+                                        it means that the queue processing is not working for more than {self.heartbeat_interval}s,
+                                        or your system is very slow...
+                                        """)
+                    self.last_enqueue_time = now
 
+                # Show queue contents for debug
                 logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")
 
+                # Sleep in small increments to allow shutdown responsiveness
                 slept = 0
                 while slept < self.sleep_interval and not self.shutdown_flag.is_set():
                     time.sleep(min(0.1, self.sleep_interval - slept))

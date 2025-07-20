@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+#
 # cascade.py
 
 """
@@ -51,6 +53,8 @@ import traceback
 import numpy as np
 import xml.etree.ElementTree as ET
 import multiprocessing
+import paramiko
+from urllib.parse import urlparse
 from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
 from pathlib import Path
@@ -72,18 +76,17 @@ def main():
 
     # Set up argument parser
     parser = argparse.ArgumentParser(
-    description="""\
-    Cat Prey Analyzer - Smart Cat Flap Monitor
+        description="""
+        Cat Prey Analyzer - Smart Cat Flap Monitor
 
-    This tool uses camera input and machine learning to detect
-    whether a cat is bringing prey, managing catflap control
-    either through the python surepy module or through homeassistant.
-    It communicates with the user and can be controlled through telegram app.
-
-    Create a [hidden] .env file containing your secrets and 'source' it before
-    firing cascade.py, or use https://pypi.org/project/python-dotenv/ .
-    You can also tweak the rest of the values in config.py for better performance.
-    """,
+        This tool uses camera input and machine learning to detect
+        whether a cat is bringing prey, managing catflap control,
+        either through the python surepy module or through homeassistant.
+        It communicates with the user (and can be controlled through) the telegram messaging app.""",
+        epilog="""
+        Edit 'config.py' to reflect your setup and tweak the values for better performance.
+        Create a [hidden] '.env' file containing your secrets from the '.env.example' template,
+        see 'https://pypi.org/project/python-dotenv/'.""",
         formatter_class=argparse.RawTextHelpFormatter
     )
 
@@ -92,28 +95,33 @@ def main():
             type=str,
             choices=['info', 'warning', 'error', 'critical', 'debug'],
             default='INFO',
-            help="Set the logging level",
+            help="Set the logging level (default=info).",
     )
     parser.add_argument(
-            '-c', '--camera',
+            '-c', '--camera_id',
             type=str,
-            help="Camera key as defined in config.py (e.g., cam1, cam2)"
+            help="Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified)."
     )
     parser.add_argument(
             '-b', '--backend',
             type=str,
             choices= ['surepy', 'ha'],
             required=False,
-            help="""Force use of one of the following backends for catflap unlocking/locking
+            help="""Force use of one of the following backends for catflap unlocking/locking:
               - surepy (use surepy module)
-              - ha (use homeassistant REST/Webhook)
-              make sure to define correct settings in the .env file
-            """,
+              - ha (use homeassistant REST/Webhook)""",
     )
     args = parser.parse_args()
 
-    CAMERA_KEY = args.camera if args.camera else "default"
+    CAMERA_ID = args.camera_id if args.camera_id else "default"
     BACKEND = args.backend if args.backend else None
+    if (CAMERA_ID):
+        cam_cfg = config.CAMERA_OVERRIDES.get(CAMERA_ID)
+        camera_host = urlparse(cam_cfg.get('url')).hostname
+        camera_ssh_username = config.CAMERA_SSH_USERNAME if hasattr(config, "CAMERA_SSH_USERNAME" or not config.CAMERA_SSH_USERNAME in (None, "" , 0)) else None
+        camera_remote_command = config.CAMERA_REMOTE_COMMAND if hasattr(config, "CAMERA_REMOTE_COMMAND" or not config.CAMERA_REMOTE_COMMAND in (None, "", 0)) else None
+        camera_ssh_key_file = config.CAMERA_SSH_KEY_FILE if hasattr(config, "CAMERA_SSH_KEY_FILE" or not config.CAMERA_SSH_KEY_FILE in (None, "", 0)) else None
+
     log_level_str = args.log.upper()
     #print(f"LOG LEVEL IN MAIN: {log_level_str}") # DEBUG print
     setup_logging(
@@ -122,8 +130,8 @@ def main():
         config.BACKUP_COUNT,
         log_level_str=log_level_str
     )
-    logging.info("MAIN LOGGING STARTED at %s", log_level_str)
     logging.info("\n\n   ##### Starting CatPreyAnalyzer #####   \n")
+    logging.info("MAIN LOGGING STARTED at %s", log_level_str)
 
     # ── Helper to know whether to try Surepy at all ──
     def use_surepy():
@@ -177,7 +185,7 @@ def main():
 
     logging.info(f"Using {config.TIMEZONE_OBJ} as timezone")
 
-    sq_cascade = Sequential_Cascade_Feeder(manager, CAMERA_KEY, use_surepy, use_ha, use_surepet, log_level_str)
+    sq_cascade = Sequential_Cascade_Feeder(manager, CAMERA_ID, use_surepy, use_ha, use_surepet, log_level_str)
     bot_instance = sq_cascade.bot
 
     def monitor_camera_proc():
@@ -195,15 +203,48 @@ def main():
                 # Optionally clear main_deque here if you want
                 sq_cascade.camera_process = multiprocessing.Process(
                     target=camera_process_entry,
-                    args=(sq_cascade.main_deque, sq_cascade.camera_key, sq_cascade.shutdown_flag, sq_cascade.pause_event, sq_cascade.pause_duration, sq_cascade.log_level_str),
+                    args=(sq_cascade.main_deque, sq_cascade.camera_id, sq_cascade.shutdown_flag, sq_cascade.pause_event, sq_cascade.pause_duration, sq_cascade.log_level_str),
                     daemon=True
                 )
                 sq_cascade.camera_process.start()
                 with suppress(Exception):
                     bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
+                    if (camera_host, camera_ssh_username, camera_remote_command, camera_ssh_key_file):
+                        #print(f"DEBUG: camera_host={camera_host}, camera_ssh_username={camera_ssh_username}, camera_remote_command={camera_remote_command}, camera_ssh_key_file={camera_ssh_key_file}")
+                        logging.info("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
+                        bot_instance.send_text("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
+                        for action in ["stop", "start", "status"]:
+                            logging.info(f"\n=== {action.upper()} ===")
+                            bot_instance.send_text(f"\n=== {action.upper()} ===")
+                            cmd = f"{camera_remote_command} {action}"
+                            out, err, code = run_remote_command(camera_host, camera_ssh_username, cmd, camera_ssh_key_file)
+                            logging.info(f"Output: {out}")
+                            bot_instance.send_text(f"Output: {out}")
+                            if code != 0:
+                                logging.info(f"Error: {err}")
+                                bot_instance.send_text(f"Error: {err}")
+                                logging.info(f"Return code: {code}")
+                                bot_instance.send_text(f"Return code: {code}")
+                            time.sleep(1)  # Pause between commands
             else:
                 # Defensive: shouldn't happen, but wait and retry
                 time.sleep(0.5)
+
+    def run_remote_command(host, username, command, ssh_key_file):
+        ssh_key_file = os.path.expanduser(ssh_key_file)
+        client = paramiko.SSHClient()
+        client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+
+        try:
+            client.connect(hostname=host, username=username, key_filename=ssh_key_file)
+
+            stdin, stdout, stderr = client.exec_command(command)
+            output = stdout.read().decode().strip()
+            error = stderr.read().decode().strip()
+            return_code = stdout.channel.recv_exit_status()
+            return output, error, return_code
+        finally:
+            client.close()
 
     threading.Thread(target=monitor_camera_proc, daemon=True).start()
 
@@ -258,7 +299,7 @@ def suppress_stdout_stderr():
             os.close(old_stdout_fileno)
             os.close(old_stderr_fileno)
 
-def camera_process_entry(main_deque, camera_key, shutdown_flag, pause_event, pause_duration, log_level_str):
+def camera_process_entry(main_deque, camera_id, shutdown_flag, pause_event, pause_duration, log_level_str):
     # Ignore SIGINT in camera process to allow clean shutdown from main process
     signal.signal(signal.SIGINT, signal.SIG_IGN)
 
@@ -270,18 +311,18 @@ def camera_process_entry(main_deque, camera_key, shutdown_flag, pause_event, pau
     )
     logging.info("CAMERA PROC LOGGING STARTED at %s", log_level_str)
 
-    cam = Camera(main_deque, camera_key, shutdown_flag, pause_event=pause_event, pause_duration=pause_duration, log_level_str=log_level_str)
+    cam = Camera(main_deque, camera_id, shutdown_flag, pause_event=pause_event, pause_duration=pause_duration, log_level_str=log_level_str)
     cam.start_hardware()
     cam.main_capture_loop()
 
 class Sequential_Cascade_Feeder():
-    def __init__(self, manager, camera_key, use_surepy, use_ha, use_surepet, log_level_str):
+    def __init__(self, manager, camera_id, use_surepy, use_ha, use_surepet, log_level_str):
         self.manager = manager
         self.main_deque = self.manager.list()
         self.shutdown_flag = self.manager.Event()
         self.pause_event = manager.Event()
         self.pause_duration = manager.Value('d', 0.0)
-        self.camera_key = camera_key
+        self.camera_id = camera_id
         self.use_surepy = use_surepy
         self.use_ha = use_ha
         self.use_surepet = use_surepet
@@ -469,7 +510,7 @@ class Sequential_Cascade_Feeder():
             state = await self.get_catflap_state_surepy()
         if state is None:
             self.bot.send_text("❌ Could not get state from Sure Petcare.")
-            return False  # Explicit failure
+            return False
 
         open_states = {"unlocked", "locked_in"}
         if state in open_states:
@@ -494,7 +535,7 @@ class Sequential_Cascade_Feeder():
                     self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{state}].")
                     self.last_unlock_method = None
                     self.last_unlock_state = None
-                    return True   # <-- ADD THIS for successful sequence
+                    return True
                 else:
                     self.bot.send_text("❌ Error relocking catflap via Sure Petcare.")
                     return False
@@ -709,7 +750,7 @@ class Sequential_Cascade_Feeder():
         # Prefill and start camera process
         self.camera_process = multiprocessing.Process(
             target=camera_process_entry,
-            args=(self.main_deque, self.camera_key, self.shutdown_flag, self.pause_event, self.pause_duration, self.log_level_str),
+            args=(self.main_deque, self.camera_id, self.shutdown_flag, self.pause_event, self.pause_duration, self.log_level_str),
             daemon=True
         )
         self.camera_process.start()
@@ -749,7 +790,7 @@ class Sequential_Cascade_Feeder():
             raise  # Let your global error handler deal with this
 
     def queue_worker(self):
-        logging.info(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
+        logging.debug(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
         start_time = time.time()
 
         # Ensure we have enough elements before accessing

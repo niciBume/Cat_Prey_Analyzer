@@ -106,7 +106,7 @@ CAMERA_OVERRIDES = {
         "url": "http://192.168.178.22:9000/mjpg",
         "cam_width": 1600,
         "cam_height": 900,
-        "hflip": True,
+        "hflip": False,
         "vflip": False
     },
     "cam2": {
@@ -116,11 +116,25 @@ CAMERA_OVERRIDES = {
         "hflip": False,
         "vflip": False
     },
+    "cam3": {
+        "url": "rtsp://192.168.178.58:8554/unicast", # for testing
+        "cam_width": 1920,
+        "cam_height": 1080,
+        "hflip": False,
+        "vflip": False
+    },
+    "cam4": {
+        "url": "http://192.168.178.22::9000/mjpg",
+        "cam_width": 1920,
+        "cam_height": 1080,
+        "hflip": False,
+        "vflip": False
+    },
     "default": {
         "cam_width": 640,
         "cam_height": 480,
-        "hflip": False,
-        "vflip": False
+        "hflip": True, # my pi camera module is mounted upside-down..
+        "vflip": True  # my pi camera module is mounted upside-down..
     }
 }
 
@@ -160,6 +174,10 @@ BACKUP_COUNT = 3
 
 # Define opening time for the catflap, in seconds
 OPEN_TIME = 60
+
+CAMERA_SSH_USERNAME = "root"
+CAMERA_REMOTE_COMMAND = "/system/sdcard/controlscripts/rtsp"
+CAMERA_SSH_KEY_FILE = "~/.ssh/id_ed25519"
 
 ### END EDITABLE VARS ###
 #
