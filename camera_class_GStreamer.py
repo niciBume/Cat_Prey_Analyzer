@@ -258,7 +258,6 @@ class Camera:
 
     def main_capture_loop(self):
         consec_failures = 0
-
         i = 0
         self.last_enqueue_time = time.time()
         logging.debug(f"MAIN_CAPTURE_LOOP STARTED in PID {os.getpid()}")
@@ -325,7 +324,6 @@ class Camera:
                     continue
                 else:
                     consec_failures = 0
-                logging.debug(f"Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
 
                 # Try motion detection
                 try:
@@ -338,6 +336,7 @@ class Camera:
                 logging.debug(f"Motion detected: {motion_detected}")
 
                 timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+
                 # Motion or heartbeat: queue frame
                 heartbeat_due = (now - self.last_enqueue_time) > self.heartbeat_interval
 
@@ -363,7 +362,6 @@ class Camera:
                                         """)
                     self.last_enqueue_time = now
 
-                # Show queue contents for debug
                 logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")
 
                 # Sleep in small increments to allow shutdown responsiveness

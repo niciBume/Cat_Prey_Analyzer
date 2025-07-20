@@ -102,7 +102,7 @@ actions:
 ```
 
 # NOTE on cv2 frame capture method
-I added GStreamer as another method of capturing frames, since I had problems on my camera with garbled images captured through openCV VideoCapture. GStreamer seems to be more reliable anyway. For this to work, you have to install the debian system package of OpenCV, opencv-python from PyPI does not have GStreamer support. If you want to use this, you have to do the following steps:
+I added GStreamer as another method of capturing frames, since I had problems on my camera with garbled images captured through openCV VideoCapture. GStreamer provides more reliable frame capture. For this to work, you have to install the debian system package of OpenCV, opencv-python from PyPI does not have GStreamer support. If you want to use this, you have to do the following steps:
 
 - Install GStreamer and plugins
 

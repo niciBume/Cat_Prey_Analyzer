@@ -57,13 +57,12 @@ import paramiko
 from urllib.parse import urlparse
 from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
-from pathlib import Path
 from datetime import datetime
 from telegram.ext import Updater, CommandHandler
 from io import BytesIO
 from typing import Optional, List
 from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
-from camera_class import Camera
+from camera_class_GStreamer import Camera
 from surepy import Surepy
 from surepy.entities.devices import Flap
 
