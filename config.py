@@ -80,13 +80,14 @@ if TIMEZONE == "UTC":
     You should set a proper timezone in config.py (e.g. 'Europe/Berlin'),
     or set/check for the correct system timezone. Please use a canonical TZ identifier from:
     https://en.wikipedia.org/wiki/List_of_tz_database_time_zones""")
-# Or set timezone manually in following step
+# Or set timezone manually in the following step
+
 
 ### START EDITABLE VARS ###
 
 #TIMEZONE = "Europe/Berlin"
 
-# set locale
+# Set locale
 try:
     locale.setlocale(locale.LC_TIME, 'de_DE.UTF-8')
 except locale.Error:
@@ -123,13 +124,6 @@ CAMERA_OVERRIDES = {
         "hflip": False,
         "vflip": False
     },
-    "cam4": {
-        "url": "http://192.168.178.22::9000/mjpg",
-        "cam_width": 1920,
-        "cam_height": 1080,
-        "hflip": False,
-        "vflip": False
-    },
     "default": {
         "cam_width": 640,
         "cam_height": 480,
@@ -146,7 +140,10 @@ MAX_QUEUE_LEN = 20
 if MAX_QUEUE_LEN <= 0:
     raise ValueError("MAX_QUEUE_LEN must be positive")
 
-# sleep interval between queued frames
+# Restart camera aquisition process after this many failures
+MAX_FRAME_FAILURES = 5
+
+# Sleep interval between queued frames
 SLEEP_INTERVAL = 0.25
 if SLEEP_INTERVAL < 0:
     raise ValueError("SLEEP_INTERVAL must be non-negative")
