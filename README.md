@@ -15,7 +15,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory (e.g., `/home/pi/CatPreyAnalyzer`) and adjust your `PYTHONPATH` accordingly (e.g., `PYTHONPATH=/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
 
-- Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
+- Install the tensorflow object detection API as explained in the [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
 - Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so, your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling [https://api.telegram.org/bot<YourBOTToken>/getUpdates](https://api.telegram.org/bot<YourBOTToken>/getUpdates) in your browser, as explained in the [StackOverflow guide on obtaining a Telegram group chat ID](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
 
@@ -85,10 +85,10 @@ http://192.168.1.24:8123/api/states/sensor.cat_flap
 The webhook triggered automation for controlling the catflap looks like this (replace 12345678 with your catflap ID):
 
 ```yaml
-alias: CatPreyAnalyser Lock/Unlock
-description: "Webhook for controlling the catflap from CatPreyAnalyzer"
+alias: Cat_Prey_Analyser Lock/Unlock
+description: "Webhook for controlling the catflap from Cat_Prey_Analyzer"
 triggers:
-  - webhook_id: LockUnlockCatFlap_fromCatPreyAnalyzer
+  - webhook_id: LockUnlockCatFlapfrom-Cat_Prey_Analyzer
     allowed_methods:
       - POST
     local_only: true
@@ -137,7 +137,7 @@ pip install "numpy<2"
 
 If you need both NumPy 2 and OpenCV with GStreamer support, you must build OpenCV from source, making sure that NumPy 2.x headers are found at build time and that GStreamer is enabled. This is not recommended for most users.
 
-- If you want to go back to using OpenCV as a frame capturing method (more simple, use `opencv-python`, but not as stable as GStreamer)
+- If you want to switch back to the simpler OpenCV capture method (`opencv-python`, but less stable than GStreamer)
 
 Open config.py and change this to `False`:
 
@@ -154,7 +154,7 @@ Also in requirements.txt, uncomment this line before installing the needed pytho
 # A word of caution
 This project uses deeplearning! Contrary to popular belief DL is **not** black magic (altough close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there are going to be instances where the system will produce absurdly wrong statements such as:
 
- <img src="/readme_images/bot_fail.png" width="400">
+ <img src="/readme_images/bot_fail.png" alt="Example of a mis-classification" width="400">
  
   This can happen and the reason why is maths... so you have to be aware of it. If this fascinates you as much as it does me and you want a deeper understanding, check out [the deeplearning book](http://www.deeplearningbook.org/)!
  
