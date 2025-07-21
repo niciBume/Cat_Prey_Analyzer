@@ -24,7 +24,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END EDITABLE VARS ###`. Set your preferences, camera URLs, video resolutions and the horizontal/vertical flipping options. After that, you can start `cascade.py` like this:
 
 ```bash
-./cascade.py --camera_id cam2 --log info
+./cascade.py --camera-id cam2 --log info
 ```
 - You can also specify a preferred backend for unlocking/locking the catflap if you configured the correct credentials for both. Select it by using the optional attribute `--backend`, which can be set to either 'surepy' or 'ha'. **NOTE**: if the chosen backend doesn’t work, there’s **no fall-back** to the other one, an error will be shown instead!
 
