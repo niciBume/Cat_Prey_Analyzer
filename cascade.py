@@ -97,7 +97,7 @@ def main():
             help="Set the logging level (default=info).",
     )
     parser.add_argument(
-            '-c', '--camera_id',
+            '-c', '--camera-id',
             type=str,
             help="Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified."
     )

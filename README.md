@@ -47,7 +47,7 @@ options:
   -h, --help            show this help message and exit
   -l {info,warning,error,critical,debug}, --log {info,warning,error,critical,debug}
                         Set the logging level (default=info).
-  -c CAMERA_ID, --camera_id CAMERA_ID
+  -c CAMERA_ID, --camera-id CAMERA_ID
                         Camera ID as defined in config.py (e.g., cam1, cam2). Takes 'default' if none specified.
   -b {surepy,ha}, --backend {surepy,ha}
                         Force use of one of the following backends for catflap unlocking/locking:
