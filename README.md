@@ -13,7 +13,7 @@ The difference of this project however is that it aims to solve *general* cat-pr
 # How to use the Code
 The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net/de/products/rb-camera-IR_PRO) attached. If you have knowledge regarding Keras, you can also run the models on your own, as the .h5 files can be found in the /models directory (check the input shapes, as they can vary). Nonetheless, I will explain the prerequisites to run this project on the RPI4 with the attached infrared camera:
 
-- Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory such that its path matches: `/home/pi/CatPreyAnalyzer` (check your `PYTHONPATH=/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
+- Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory (e.g., `/home/pi/CatPreyAnalyzer`) and adjust your `PYTHONPATH` accordingly (e.g., `PYTHONPATH=/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
 
 - Install the tensorflow object detection API as explained in [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
@@ -63,7 +63,7 @@ By following all these steps, you should now be greeted by your Telegram Bot at 
 
 <img src="/readme_images/bot_good_morning.png" alt="Telegram Bot greeting" width="400">
 
-The system is now running and the available bot commands are shown. You can access those anytime by typing `/help` in your bot conversation. Be aware that you need patience at startup, as the models take up to 5 min to load — they are substantial in size.
+The system is now running and the available bot commands are shown. You can access those anytime by typing `/help` in your bot conversation. Be aware that you need patience at startup, as the models take up to 5 min to load due to their large size.
 
 # Catflap Lock/Unlock Backends
 For these two following steps you need to get your Sure Petcare's <catflap ID> by logging in to [https://surepetcare.io/OnboardingLetsStart](https://surepetcare.io/OnboardingLetsStart), going to products and clicking on your catflap. Note the ID from the URL you see in your browser, it'll look something like this: `https://surepetcare.io/device/<YourID>/details`.
