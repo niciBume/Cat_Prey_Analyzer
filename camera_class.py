@@ -170,26 +170,44 @@ class Camera:
             self.picam2.start()
             time.sleep(2)
             logging.info("PiCamera2 initialized.")
-        else:
-            try:
-                gst_pipeline = self._gstreamer_pipeline()
-                logging.debug(f"Opening camera with GStreamer pipeline: {gst_pipeline}")
-                self.cap = cv2.VideoCapture(gst_pipeline, cv2.CAP_GSTREAMER)
-                if not self.cap.isOpened():
-                    raise RuntimeError(f"Failed to open camera with pipeline: {gst_pipeline}")
-                # Prime the pipeline: discard first 10 frames to avoid grey/noise/buffered frames
+            return
+
+        try:
+            if config.USE_GSTREAMER:
+                pipeline = self._gstreamer_pipeline()
+                logging.info(f"Opening camera with GStreamer pipeline: {pipeline}")
+                self.cap = cv2.VideoCapture(pipeline, cv2.CAP_GSTREAMER)
+            else:
+                self.cap = cv2.VideoCapture(self.camera_url)
+                if self.camera_type == "usb":
+                    self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.cam_x)
+                    self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.cam_y)
+                    self.cap.set(cv2.CAP_PROP_FPS, 6)
+                elif self.camera_type == "mjpeg":
+                    self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+                elif self.camera_type == "rtsp":
+                    logging.debug("RTSP stream may need time to buffer. Sleeping briefly...")
+                    time.sleep(0.05)
+
+            if not self.cap.isOpened():
+                raise RuntimeError(f"Failed to open camera stream: {self.camera_url}")
+
+            # Prime buffer (GStreamer only)
+            if config.USE_GSTREAMER:
                 for _ in range(10):
                     self.cap.read()
-                logging.info("GStreamer pipeline opened successfully and primed.")
-            except Exception as e:
-                logging.error(f"Failed to open camera stream with GStreamer: {e}")
-                if self.restart_attempts < self.max_restart_attempts:
-                    self.restart_attempts += 1
-                    logging.error(f"Restart attempt {self.restart_attempts}/{self.max_restart_attempts}")
-                    time.sleep(1)
-                    self._restart_camera()
-                else:
-                    raise RuntimeError(f"Failed to initialize camera after {self.max_restart_attempts} attempts") from e
+
+            logging.info(f"Camera initialized with {'GStreamer' if config.USE_GSTREAMER else 'OpenCV'} backend.")
+
+        except Exception as e:
+            logging.error(f"Camera initialization failed: {e}")
+            if self.restart_attempts < self.max_restart_attempts:
+                self.restart_attempts += 1
+                logging.error(f"Restart attempt {self.restart_attempts}/{self.max_restart_attempts}")
+                time.sleep(1)
+                self._restart_camera()
+            else:
+                raise RuntimeError(f"Failed to initialize camera after {self.max_restart_attempts} attempts") from e
 
     def _restart_camera(self):
         logging.warning("Restarting camera...")

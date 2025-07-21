@@ -132,6 +132,9 @@ CAMERA_OVERRIDES = {
     }
 }
 
+# use GStreamer or OpenCV for capturing frames
+USE_GSTREAMER = True
+
 # The heartbeat interval
 HEARTBEAT_INTERVAL = 60
 
