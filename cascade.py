@@ -62,7 +62,7 @@ from telegram.ext import Updater, CommandHandler
 from io import BytesIO
 from typing import Optional, List
 from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
-from camera_class_GStreamer import Camera
+from camera_class import Camera
 from surepy import Surepy
 from surepy.entities.devices import Flap
 
@@ -114,7 +114,7 @@ def main():
 
     CAMERA_ID = args.camera_id if args.camera_id else "default"
     BACKEND = args.backend if args.backend else None
-    if (CAMERA_ID):
+    if CAMERA_ID != "default":
         cam_cfg = config.CAMERA_OVERRIDES.get(CAMERA_ID)
         camera_host = urlparse(cam_cfg.get('url')).hostname
         camera_ssh_username = config.CAMERA_SSH_USERNAME if hasattr(config, "CAMERA_SSH_USERNAME") and config.CAMERA_SSH_USERNAME not in (None, "", 0) else None
