@@ -1,4 +1,4 @@
-# camera_class.py
+# camera_class_opencv.py
 
 """
 Cat Prey Analyzer - Camera Acquisition & Frame Queue Logic
@@ -330,11 +330,11 @@ class Camera:
                         self.q.append((timestamp, frame))
                         logging.info(f"🌙 [HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
-                        logging.warning(f"""
-                                        ### THIS SHOULDN'T HAPPEN ### Queue is full {self.max_queue_len}, dropping heartbeat frame!
-                                        it means that the queue processing is not working for more than {self.heartbeat_interval}s,
-                                        or your system is very slow...
-                                        """)
+                        logging.warning(
+                            f"### THIS SHOULDN'T HAPPEN ### Queue is full {self.max_queue_len}, dropping heartbeat frame! "
+                            f"It means that the queue processing is not working for more than {self.heartbeat_interval}s, "
+                            f"or your system is very slow..."
+                        )
                     self.last_enqueue_time = now
 
                 logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")

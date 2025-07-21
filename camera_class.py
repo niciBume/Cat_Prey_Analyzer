@@ -1,4 +1,4 @@
-# camera_class_GStreamer.py
+# camera_class.py
 
 """
 Cat Prey Analyzer - Camera Acquisition & Frame Queue Logic
@@ -55,7 +55,7 @@ class Camera:
         self.pause_duration = pause_duration or multiprocessing.Manager().Value('d', 0.0)
         self.restart_attempts = 0
         self.max_restart_attempts = 5
-        self.max_frame_failures = getattr(config, "self.max_frame_failures", 5)
+        self.max_frame_failures = getattr(config, "MAX_FRAME_FAILURES", 5)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
         self.heartbeat_interval = getattr(config, "HEARTBEAT_INTERVAL", 60)  # seconds
@@ -355,11 +355,11 @@ class Camera:
                         self.q.append((timestamp, frame))
                         logging.info(f"🌙 [HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
-                        logging.warning(f"""
-                                        ### THIS SHOULDN'T HAPPEN ### Queue is full {self.max_queue_len}, dropping heartbeat frame!
-                                        it means that the queue processing is not working for more than {self.heartbeat_interval}s,
-                                        or your system is very slow...
-                                        """)
+                        logging.warning(
+                            f"### THIS SHOULDN'T HAPPEN ### Queue is full {self.max_queue_len}, dropping heartbeat frame! "
+                            f"It means that the queue processing is not working for more than {self.heartbeat_interval}s, "
+                            f"or your system is very slow..."
+                        )
                     self.last_enqueue_time = now
 
                 logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")
