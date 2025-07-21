@@ -101,7 +101,7 @@ actions:
 ```
 
 # NOTE on cv2 frame capture method
-I added GStreamer as the default method of capturing frames, since I had problems on my camera with garbled images captured through openCV VideoCapture. GStreamer provides more reliable frame capture. For this to work, you have to install the debian system package of OpenCV, opencv-python from PyPI does not have GStreamer support. If you want to use this, you have to do the following steps:
+I added GStreamer as the default method of capturing frames, since I had problems on my camera with garbled images captured through openCV VideoCapture. GStreamer provides more reliable frame capture. For this to work, you have to install the debian system package of OpenCV, opencv-python from PyPI does not have GStreamer support. To be able to use this, you have to do the following steps:
 
 - Install GStreamer and plugins
 
@@ -137,18 +137,18 @@ pip install "numpy<2"
 
 If you need both NumPy 2 and OpenCV with GStreamer support, you must build OpenCV from source, making sure that NumPy 2.x headers are found at build time and that GStreamer is enabled. This is not recommended for most users.
 
-- If you want to go back to using OpenCV as a frame capturing method, just edit `cascade.py` and change the following import statement:
+- If you want to go back to using OpenCV as a frame capturing method (more simple, use `opencv-python`, but not as stable as GStreamer)
 
-from this:
+Open config.py and change this to `False`:
 
 ```python
-from camera_class import Camera
+USE_GSTREAMER = True
 ```
 
-to this:
+Also in requirements.txt, uncomment this line before installing the needed python modules:
 
 ```python
-from camera_class_opencv import Camera
+#opencv-python>=4.5.0
 ```
 
 # A word of caution
