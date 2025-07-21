@@ -54,8 +54,8 @@ def detect_system_timezone():
                 tz = "/".join(parts[idx + 1:])
                 if tz in pytz.all_timezones:
                     return tz
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Failed to detect system timezone: {e}")
     return "UTC"
 
 def _require_env(var: str) -> str:
