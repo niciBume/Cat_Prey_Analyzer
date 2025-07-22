@@ -85,7 +85,7 @@ http://192.168.1.24:8123/api/states/sensor.cat_flap
 The webhook triggered automation for controlling the catflap looks like this (replace 12345678 with your catflap ID):
 
 ```yaml
-alias: Cat_Prey_Analyser Lock/Unlock
+alias: Cat_Prey_Analyzer Lock/Unlock
 description: "Webhook for controlling the catflap from Cat_Prey_Analyzer"
 triggers:
   - webhook_id: LockUnlockCatFlapfrom-Cat_Prey_Analyzer
