@@ -15,7 +15,7 @@ The code is meant to run on a RPI4 with the [IR JoyIt Camera](https://joy-it.net
 
 - Download the whole project and transfer it to your RPI. Make sure to place the folder in your home directory (e.g., `/home/pi/CatPreyAnalyzer`) and adjust your `PYTHONPATH` accordingly (e.g., `PYTHONPATH=/home/pi/tensorflow1/models/research:/home/pi/tensorflow1/models/research/slim`).
 
-- Install the tensorflow object detection API as explained in the [EdjeElectronics Repositoy](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
+- Install the tensorflow object detection API as explained in the [EdjeElectronics Repository](https://github.com/EdjeElectronics/TensorFlow-Object-Detection-on-the-Raspberry-Pi), which provides other excellent RPI object detection information.
 
 - Create a Telegram Bot via the [Telegram Bot API](https://core.telegram.org/bots). After doing so, your bot will receive a **BOT_TOKEN**, write this down. Next you will have to get your **CHAT_ID** by calling [https://api.telegram.org/bot<YourBOTToken>/getUpdates](https://api.telegram.org/bot<YourBOTToken>/getUpdates) in your browser, as explained in the [StackOverflow guide on obtaining a Telegram group chat ID](https://stackoverflow.com/questions/32423837/telegram-bot-how-to-get-a-group-chat-id).
 
