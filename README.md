@@ -152,7 +152,7 @@ Also in requirements.txt, uncomment this line before installing the needed pytho
 ```
 
 # A word of caution
-This project uses deeplearning! Contrary to popular belief DL is **not** black magic (altough close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there are going to be instances where the system will produce absurdly wrong statements such as:
+This project uses deeplearning! Contrary to popular belief DL is **not** black magic (although close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there are going to be instances where the system will produce absurdly wrong statements such as:
 
  <img src="/readme_images/bot_fail.png" alt="Example of a mis-classification" width="400">
  
