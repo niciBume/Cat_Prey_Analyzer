@@ -4,7 +4,7 @@ This project aims to perform Cat Prey Detection with Deep Learning on any cat in
 
 <img src="readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg" alt="Lenna cascade sample frame" width="400">
 
-The script can connect to your [Sure Petcare Catflap](https://www.surepetcare.com/en-us/pet-doors/microchip-cat-flap-connect), either by logging directly into your account through the Surepy module ([surepy on GitHub](https://github.com/benleb/surepy)) or via Home Assistant ([hass.io](https://hass.io)), or both. It reads settings from `config.py` and environment variables — first attempts Surepy, then falls back to Home Assistant.
+The script can connect to your [Sure Petcare Catflap](https://www.surepetcare.com/en-us/pet-doors/microchip-cat-flap-connect), either by logging directly into your account through the Surepy module ([surepy on GitHub](https://github.com/benleb/surepy)) or via Home Assistant ([www.home-assistant.io](https://www.home-assistant.io)), or both. It reads settings from `config.py` and environment variables — first attempts Surepy, then falls back to Home Assistant.
 
 # Related work
 This isn't the first approach at solving the mentioned problem! There have been other equally (if not better) valid approaches such as the [Catcierge](https://github.com/JoakimSoderberg/catcierge) which analyzes the silhouette of the cat a very recent approach of the [AI powered Catflap](https://www.theverge.com/tldr/2019/6/30/19102430/amazon-engineer-ai-powered-catflap-prey-ben-hamm).
@@ -152,7 +152,7 @@ Also in requirements.txt, uncomment this line before installing the needed pytho
 ```
 
 # A word of caution
-This project uses deeplearning! Contrary to popular belief DL is **not** black magic (although close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there are going to be instances where the system will produce absurdly wrong statements such as:
+This project uses deeplearning! Contrary to popular belief DL is **not** black magic (although close to 😎)! The network perceives image data differently than us humans. It "sees" more abstractly than us. This means a cat in the image lives as an abstract blob deep within the layers of the network. Thus there will be instances where the system will produce absurdly wrong statements such as:
 
  <img src="/readme_images/bot_fail.png" alt="Example of a mis-classification" width="400">
  
