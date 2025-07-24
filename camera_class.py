@@ -51,8 +51,10 @@ class Camera:
         self.q = q
         self.camera_id = camera_id
         self.shutdown_flag = shutdown_flag
-        self.pause_event = pause_event or multiprocessing.Manager().Event()
-        self.pause_duration = pause_duration or multiprocessing.Manager().Value('d', 0.0)
+        if pause_event is None or pause_duration is None:
+            raise ValueError("pause_event and pause_duration must be provided")
+        self.pause_event = pause_event
+        self.pause_duration = pause_duration
         self.restart_attempts = 0
         self.max_restart_attempts = 5
         self.max_frame_failures = getattr(config, "MAX_FRAME_FAILURES", 5)
