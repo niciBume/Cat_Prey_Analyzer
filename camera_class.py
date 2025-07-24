@@ -224,10 +224,6 @@ class Camera:
         self.restart_attempts = 0
 
     def _process_motion_detection(self, frame, prev_gray):
-        """
-        Detects motion between the given frame and the previous grayscale frame.
-        Returns (gray, motion_detected), where gray is the current grayscale frame.
-        """
         if frame is None:
             logging.warning("Received empty frame for motion detection.")
             return prev_gray, False
@@ -251,8 +247,8 @@ class Camera:
             if motion_pixels > self.motion_threshold:
                 motion_detected = True
                 logging.debug(f"Motion detected: {motion_pixels} changed pixels (threshold: {self.motion_threshold}).")
-            else:
-                logging.debug(f"No significant motion: {motion_pixels} changed pixels (threshold: {self.motion_threshold}).")
+            #else:
+                #logging.debug(f"No significant motion: {motion_pixels} changed pixels (threshold: {self.motion_threshold}).")
         else:
             logging.debug("No previous frame for motion detection; skipping motion calculation.")
 
@@ -263,9 +259,9 @@ class Camera:
             rgb = self.picam2.capture_array("main")
             frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         else:
-            logging.debug("Reading from cv2.VideoCapture...")
+            #logging.debug("Reading from cv2.VideoCapture...")
             ret, frame = self.cap.read()
-            logging.debug(f"cv2.VideoCapture.read() returned ret={ret}, frame is {'not None' if frame is not None else 'None'}")
+            #logging.debug(f"cv2.VideoCapture.read() returned ret={ret}, frame is {'not None' if frame is not None else 'None'}")
             if not ret or frame is None:
                 logging.debug("RETURNING None, 'Not ret or frame is None'")
                 return None
@@ -308,13 +304,13 @@ class Camera:
         if last_frame is not None:
             prev_gray = cv2.cvtColor(last_frame, cv2.COLOR_BGR2GRAY)
             prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
-            logging.debug("Initialized prev_gray from last prefill frame.")
+            #logging.debug("Initialized prev_gray from last prefill frame.")
 
         logging.debug("DONE PREFILL - entering main loop")
 
         # --- Main capture loop ---
         while not self.shutdown_flag.is_set():
-            logging.debug(f"Queue type: {type(self.q)}, queue id: {id(self.q)}, length: {len(self.q)}")
+            #logging.debug(f"Queue type: {type(self.q)}, queue id: {id(self.q)}, length: {len(self.q)}")
             try:
                 # Handle pause event
                 if self.pause_event.is_set():
@@ -351,12 +347,9 @@ class Camera:
                     gray, motion_detected = None, False
                 prev_gray = gray
 
-                logging.debug(f"Motion detected: {motion_detected}")
-
-                timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
-
                 # Motion or heartbeat: queue frame
                 heartbeat_due = (now - self.last_enqueue_time) > self.heartbeat_interval
+                timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
 
                 if motion_detected:
                     # Only enqueue motion frame
@@ -380,7 +373,7 @@ class Camera:
                         )
                     self.last_enqueue_time = now
 
-                logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")
+                #logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")
 
                 # Sleep in small increments to allow shutdown responsiveness
                 slept = 0

@@ -66,11 +66,10 @@ from camera_class import Camera
 from surepy import Surepy
 from surepy.entities.devices import Flap
 
-# --- Watchdog Thread for Main Analysis Loop ---
-WATCHDOG_TIMEOUT = 120  # seconds
+watchdog_timeout = config.WATCHDOG_TIMEOUT if hasattr(config, "WATCHDOG_TIMEOUT") and config.WATCHDOG_TIMEOUT not in (None, "", 0) else 120
 
 def main():
-    global sq_cascade, bot_instance
+    global sq_cascade, bot_instance, watchdog_timeout
     manager = multiprocessing.Manager()
 
     # Set up argument parser
@@ -122,7 +121,6 @@ def main():
         camera_ssh_key_file = config.CAMERA_SSH_KEY_FILE if hasattr(config, "CAMERA_SSH_KEY_FILE") and config.CAMERA_SSH_KEY_FILE not in (None, "", 0) else None
 
     log_level_str = args.log.upper()
-    #print(f"LOG LEVEL IN MAIN: {log_level_str}") # DEBUG print
     setup_logging(
         config.LOG_FILENAME,
         config.MAX_LOG_SIZE,
@@ -250,12 +248,12 @@ def main():
     # --- Start Watchdog thread ---
     def watchdog():
         while not shutting_down.is_set():
-            time.sleep(WATCHDOG_TIMEOUT)
+            time.sleep(watchdog_timeout)
             now = time.time()
             try:
                 if hasattr(sq_cascade, "last_heartbeat"):
                     elapsed = now - sq_cascade.last_heartbeat
-                    if elapsed > WATCHDOG_TIMEOUT:
+                    if elapsed > watchdog_timeout:
                         msg = f"❌ [WATCHDOG]: Main analysis loop appears stuck! No heartbeat for {elapsed:.1f} seconds."
                         print(msg)
                         logging.error(msg)
@@ -355,11 +353,12 @@ class Sequential_Cascade_Feeder():
         self.surepy_client = None
         self.last_unlock_method = None
         self.last_unlock_state = None
-        logging.debug(f"Log Dir: {self.log_dir}")
         self.log_level_str = log_level_str
         self.last_heartbeat = time.time()
         self.done_timestamp = None
         self.done_timestamp_last = None
+        logging.debug(f"Log Dir: {self.log_dir}")
+        logging.info(f"DEFAULT_FPS_OFFSET: {self.fps_offset}")
 
     def pause_camera(self, open_time):
         if self.camera_process is not None and self.camera_process.is_alive():
@@ -546,7 +545,7 @@ class Sequential_Cascade_Feeder():
             return False
 
     def open_catflap(self):
-        if self.use_surepet != "ha" and self.use_surepy:
+        if self.use_surepy and self.use_surepet:
             result = asyncio.run(self.surepy_flow())
             if not result:
                 logging.error("❌ Using surepy to unlock catflap failed!")
