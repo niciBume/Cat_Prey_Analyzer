@@ -1425,7 +1425,6 @@ def handle_exit(signum=None, frame=None, exc=None):
 
     time.sleep(0.25)
     print("Exiting main process (forced).")
-    os.remove(lockfile)
     try:
         sys.exit(0)
     except Exception:
@@ -1437,11 +1436,10 @@ if __name__ == '__main__':
     multiprocessing.set_start_method('spawn', force=True)
     lockfile = '/var/run/Cat_Prey_Analyzer/lock'
 
-    lock_fd = open(lockfile, 'w')
-
     try:
-        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        with open(lockfile, 'w') as lock_fd:
+            fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            main()
     except BlockingIOError:
         print("Another instance is already running. Exiting.")
         sys.exit(0)
-    main()
