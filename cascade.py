@@ -54,6 +54,8 @@ import numpy as np
 import xml.etree.ElementTree as ET
 import multiprocessing
 import paramiko
+import socket
+import fcntl
 from urllib.parse import urlparse
 from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
@@ -189,57 +191,93 @@ def main():
         # Wait until camera_process is created
         while sq_cascade.camera_process is None:
             time.sleep(0.1)
+
         while not shutting_down.is_set():
             if sq_cascade.camera_process is not None:
                 sq_cascade.camera_process.join()
                 exitcode = sq_cascade.camera_process.exitcode
+
                 if shutting_down.is_set():
-                    break  # Don't restart if we're shutting down
+                    break
+
                 logging.warning(f"Camera process exited with code {exitcode}. Restarting in 5 seconds.")
                 time.sleep(5)
-                # Optionally clear main_deque here if you want
+
+                # Restart camera process
                 sq_cascade.camera_process = multiprocessing.Process(
                     target=camera_process_entry,
-                    args=(sq_cascade.main_deque, sq_cascade.camera_id, sq_cascade.shutdown_flag, sq_cascade.pause_event, sq_cascade.pause_duration, sq_cascade.log_level_str),
+                    args=(
+                        sq_cascade.main_deque,
+                        sq_cascade.camera_id,
+                        sq_cascade.shutdown_flag,
+                        sq_cascade.pause_event,
+                        sq_cascade.pause_duration,
+                        sq_cascade.log_level_str
+                    ),
                     daemon=True
                 )
                 sq_cascade.camera_process.start()
+
                 with suppress(Exception):
                     bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
                     if all([camera_host, camera_ssh_username, camera_remote_command, camera_ssh_key_file]):
-                        #print(f"DEBUG: camera_host={camera_host}, camera_ssh_username={camera_ssh_username}, camera_remote_command={camera_remote_command}, camera_ssh_key_file={camera_ssh_key_file}")
                         logging.info("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
                         bot_instance.send_text("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
-                        for action in ["stop", "start", "status"]:
-                            logging.info(f"\n=== {action.upper()} ===")
-                            bot_instance.send_text(f"\n=== {action.upper()} ===")
-                            cmd = f"{camera_remote_command} {action}"
-                            out, err, code = run_remote_command(camera_host, camera_ssh_username, cmd, camera_ssh_key_file)
-                            logging.info(f"Output: {out}")
-                            bot_instance.send_text(f"Output: {out}")
-                            if code != 0:
-                                logging.info(f"Error: {err}")
-                                bot_instance.send_text(f"Error: {err}")
-                                logging.info(f"Return code: {code}")
-                                bot_instance.send_text(f"Return code: {code}")
-                            time.sleep(1)  # Pause between commands
+                        restart_camera_over_ssh(
+                            camera_host,
+                            camera_ssh_username,
+                            camera_remote_command,
+                            camera_ssh_key_file,
+                            bot=bot_instance
+                        )
             else:
-                # Defensive: shouldn't happen, but wait and retry
                 time.sleep(0.5)
 
-    def run_remote_command(host, username, command, ssh_key_file):
+    def restart_camera_over_ssh(host, username, command_base, ssh_key_file, bot=None):
+        actions = ["stop", "start", "status"]
+        for action in actions:
+            logging.info(f"\n=== {action.upper()} ===")
+            if bot:
+                bot.send_text(f"\n=== {action.upper()} ===")
+
+            full_command = f"{command_base} {action}"
+            out, err, code = run_remote_command(host, username, full_command, ssh_key_file, timeout=10)
+
+            logging.info(f"Output: {out}")
+            if bot:
+                bot.send_text(f"Output: {out}")
+            if code != 0:
+                logging.info(f"Error: {err}")
+                logging.info(f"Return code: {code}")
+                if bot:
+                    bot.send_text(f"Error: {err}")
+                    bot.send_text(f"Return code: {code}")
+            time.sleep(1)
+
+    def run_remote_command(host, username, command, ssh_key_file, timeout=5):
         ssh_key_file = os.path.expanduser(ssh_key_file)
         client = paramiko.SSHClient()
         client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
 
         try:
-            client.connect(hostname=host, username=username, key_filename=ssh_key_file)
+            client.connect(
+                hostname=host,
+                username=username,
+                key_filename=ssh_key_file,
+                timeout=timeout,
+                banner_timeout=timeout,
+                auth_timeout=timeout
+            )
 
-            stdin, stdout, stderr = client.exec_command(command)
-            output = stdout.read().decode().strip()
-            error = stderr.read().decode().strip()
+            stdin, stdout, stderr = client.exec_command(command, timeout=timeout)
+            output = stdout.read().decode(errors="replace").strip()
+            error = stderr.read().decode(errors="replace").strip()
             return_code = stdout.channel.recv_exit_status()
             return output, error, return_code
+
+        except (paramiko.SSHException, socket.timeout, socket.error) as e:
+            return "", f"SSH error: {str(e)}", 255
+
         finally:
             client.close()
 
@@ -844,7 +882,6 @@ class Sequential_Cascade_Feeder():
                     self.send_no_prey_message(self.event_objects, self.cumulus_points / self.face_counter)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.bot.send_text("😸️ Cat is clean, unlocking the catflap temporarily")
-                    self.reset_cumuli_et_al()
                 elif self.cumulus_points / self.face_counter < self.cumulus_prey_threshold:
                     self.PREY_FLAG = True
                     logging.info("🐁 CAT HAS A PREY!!!!!")
@@ -1388,6 +1425,7 @@ def handle_exit(signum=None, frame=None, exc=None):
 
     time.sleep(0.25)
     print("Exiting main process (forced).")
+    os.remove(lockfile)
     try:
         sys.exit(0)
     except Exception:
@@ -1397,4 +1435,13 @@ if __name__ == '__main__':
     signal.signal(signal.SIGINT, handle_exit)
     signal.signal(signal.SIGTERM, handle_exit)
     multiprocessing.set_start_method('spawn', force=True)
+    lockfile = '/var/run/Cat_Prey_Analyzer/lock'
+
+    lock_fd = open(lockfile, 'w')
+
+    try:
+        fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        print("Another instance is already running. Exiting.")
+        sys.exit(0)
     main()
