@@ -42,13 +42,13 @@ def setup_logging(log_filename, max_log_size, backup_count, log_level_str="INFO"
     )
 
     # Compress old log files after rotation
+    log_handler.namer = lambda name: name + ".gz"
     class GzipRotator:
         def __call__(self, source, dest):
-            with open(source, 'rb') as f_in, gzip.open(dest + '.gz', 'wb') as f_out:
+            with open(source, 'rb') as f_in, gzip.open(dest, 'wb') as f_out:
                 shutil.copyfileobj(f_in, f_out)
             os.remove(source)
     log_handler.rotator = GzipRotator()
-    log_handler.namer = lambda name: name
 
     formatter = logging.Formatter('%(asctime)s [%(levelname)s][PID %(process)d]: %(message)s',
                                   datefmt='%x-%X')
