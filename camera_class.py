@@ -260,9 +260,7 @@ class Camera:
             rgb = self.picam2.capture_array("main")
             frame = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         else:
-            #logging.debug("Reading from cv2.VideoCapture...")
             ret, frame = self.cap.read()
-            #logging.debug(f"cv2.VideoCapture.read() returned ret={ret}, frame is {'not None' if frame is not None else 'None'}")
             if not ret or frame is None:
                 logging.debug("RETURNING None, 'Not ret or frame is None'")
                 return None
@@ -311,7 +309,6 @@ class Camera:
 
         # --- Main capture loop ---
         while not self.shutdown_flag.is_set():
-            #logging.debug(f"Queue type: {type(self.q)}, queue id: {id(self.q)}, length: {len(self.q)}")
             try:
                 # Handle pause event
                 if self.pause_event.is_set():
@@ -373,8 +370,6 @@ class Camera:
                             f"or your system is very slow..."
                         )
                     self.last_enqueue_time = now
-
-                #logging.debug(f"Queue IDs: {[id(f) for _, f in self.q]}, queue length={len(self.q)}")
 
                 # Sleep in small increments to allow shutdown responsiveness
                 slept = 0
