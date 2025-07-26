@@ -41,7 +41,6 @@ import os
 import cv2 # print(cv2.getBuildInformation())
 import time
 import csv
-import telegram
 import requests
 import argparse
 import asyncio
@@ -60,7 +59,8 @@ from urllib.parse import urlparse
 from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
 from datetime import datetime
-from telegram.ext import Updater, CommandHandler
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update, ParseMode, BotCommand
+from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
 from telegram.error import BadRequest
 from io import BytesIO
 from typing import Optional, List
@@ -818,7 +818,7 @@ class Sequential_Cascade_Feeder():
                         self.reset_cumuli_et_al()
 
                 except Exception as e:
-                    logging.exception("Queue handler inner exception (recoverable): {e}")
+                    logging.exception(f"Queue handler inner exception (recoverable): {e}")
                     time.sleep(1)  # avoid tight crash loops
                     continue
 
@@ -1175,7 +1175,7 @@ class Cascade:
         font = cv2.FONT_HERSHEY_SIMPLEX
         fontScale = 1
         thickness = 2
-        lineType = "cv.LINE_AA"
+        lineType = cv2.LINE_AA
 
         cv2.putText(img, text,
                     text_pos,
@@ -1194,16 +1194,27 @@ class NodeBot():
         self.bot_updater = Updater(token=config.BOT_TOKEN)
         self.bot_dispatcher = self.bot_updater.dispatcher
 
-        """
-        Removed reboot for now, clicked on it too many times by mistake :P
-        You can enable it in config.py, it if you are running this on a dedicated machine
-        """
-        # test if dedicated machine
+        # Define commands depending on IS_DEDICATED
+        self.commands = [
+            ('help', 'Show help'),
+            ('nodestatus', 'Show node status'),
+            ('sendlivepic', 'Send live image'),
+            ('sendlastcascpic', 'Send last cascade image'),
+            ('letin', 'Let the cat in'),
+        ]
         if config.IS_DEDICATED:
-            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin', '/reboot', '/stopreboot']
-        else:
-            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
+            self.commands += [
+                ('reboot', 'Reboot the node'),
+                ('stopreboot', 'Cancel pending reboot'),
+            ]
+        self.commands.append(('menu', 'Show quick action buttons'))
 
+        # Register visible command menu
+        self.bot_updater.bot.set_my_commands([
+            BotCommand(cmd, desc) for cmd, desc in self.commands
+        ])
+
+        # Init bot state
         self.node_live_img = None
         self.node_live_timestamp = None
         self.node_queue_info = None
@@ -1212,65 +1223,61 @@ class NodeBot():
         self.node_last_casc_img = None
         self.node_let_in_flag = None
 
-        #Init the listener
+        # Init listeners
         self.init_bot_listener()
 
     def get_help_menu(self):
         bot_message = 'Following commands are supported:'
-        for command in self.commands:
-            bot_message += '\n ' + command
+        for cmd, _ in self.commands:
+            bot_message += f'\n /{cmd}'
         return bot_message
 
     def init_bot_listener(self):
-        telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text='Hi there, NodeBot is online!')
-        # Add all commands to handler
-        help_handler = CommandHandler('help', self.bot_help_cmd)
-        self.bot_dispatcher.add_handler(help_handler)
-        node_status_handler = CommandHandler('nodestatus', self.bot_send_status)
-        self.bot_dispatcher.add_handler(node_status_handler)
-        send_pic_handler = CommandHandler('sendlivepic', self.bot_send_live_pic)
-        self.bot_dispatcher.add_handler(send_pic_handler)
-        send_last_casc_pic = CommandHandler('sendlastcascpic', self.bot_send_last_casc_pic)
-        self.bot_dispatcher.add_handler(send_last_casc_pic)
-        letin = CommandHandler('letin', self.node_let_in)
-        self.bot_dispatcher.add_handler(letin)
-        if config.IS_DEDICATED:
-            reboot = CommandHandler('reboot', self.node_reboot)
-            self.bot_dispatcher.add_handler(reboot)
-            stopreboot = CommandHandler('stopreboot', self.node_stop_reboot)
-            self.bot_dispatcher.add_handler(stopreboot)
-        self.send_text(self.get_help_menu())
+        Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text='Hi there, NodeBot is online!')
 
-        # Start the polling stuff
+        menu_handler = CommandHandler('menu', self.bot_show_menu)
+        callback_handler = CallbackQueryHandler(self.bot_menu_button_handler)
+        self.bot_dispatcher.add_handler(menu_handler)
+        self.bot_dispatcher.add_handler(callback_handler)
+        self.bot_dispatcher.add_handler(CommandHandler('help', self.bot_help_cmd))
+        self.bot_dispatcher.add_handler(CommandHandler('nodestatus', self.bot_send_status))
+        self.bot_dispatcher.add_handler(CommandHandler('sendlivepic', self.bot_send_live_pic))
+        self.bot_dispatcher.add_handler(CommandHandler('sendlastcascpic', self.bot_send_last_casc_pic))
+        self.bot_dispatcher.add_handler(CommandHandler('letin', self.node_let_in))
+        self.bot_dispatcher.add_handler(CommandHandler('menu', self.bot_show_menu))
+        self.bot_dispatcher.add_handler(CallbackQueryHandler(self.bot_menu_button_handler))
+
+        if config.IS_DEDICATED:
+            self.bot_dispatcher.add_handler(CommandHandler('reboot', self.node_reboot))
+            self.bot_dispatcher.add_handler(CommandHandler('stopreboot', self.node_stop_reboot))
+
+        self.send_text(self.get_help_menu())
         self.bot_updater.start_polling()
 
     def send_text(self, message):
-        telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+        Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=ParseMode.MARKDOWN)
 
     def edit_message_text(self, message_id, text):
         try:
-            telegram.Bot(token=config.BOT_TOKEN).edit_message_text(
+            Bot(token=config.BOT_TOKEN).edit_message_text(
                 chat_id=config.CHAT_ID,
                 message_id=message_id,
                 text=text,
-                parse_mode=telegram.ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN
             )
         except BadRequest as e:
             if "Message is not modified" not in str(e):
                 raise
 
     def bot_help_cmd(self, bot, update):
-        bot_message = 'Following commands are supported:'
-        for command in self.commands:
-            bot_message += '\n ' + command
-        self.send_text(bot_message)
+        self.send_text(self.get_help_menu())
 
     def node_let_in(self, bot, update):
         self.send_text("🚪️ Unlocking the catflap on user's behalf.")
         self.node_let_in_flag = True
 
     def node_reboot(self, bot, update):
-        if config.IS_DEDICATED:  # test if dedicated machine
+        if config.IS_DEDICATED:
             self.stop_reboot = False
             threading.Thread(target=self._run_reboot_countdown, args=(bot,), daemon=True).start()
 
@@ -1283,7 +1290,7 @@ class NodeBot():
         msg = self.bot_updater.bot.send_message(
             chat_id=config.CHAT_ID,
             text="🔁 Rebooting in 15 seconds... [`/stopreboot`]",
-            parse_mode=telegram.ParseMode.MARKDOWN
+            parse_mode=ParseMode.MARKDOWN
         )
         for i in range(15, 0, -1):
             with self.reboot_lock:
@@ -1297,7 +1304,6 @@ class NodeBot():
                 self.edit_message_text(msg.message_id, new_text)
                 last_text = new_text
             time.sleep(1)
-
         self.edit_message_text(msg.message_id, "⚡ Rebooting now...")
         logging.info("Telegram bot requested a reboot, REBOOTING!")
         os.system("sudo reboot")
@@ -1312,7 +1318,6 @@ class NodeBot():
 
     def bot_send_live_pic(self, bot, update):
         if self.node_live_img is not None:
-            # Encode image to JPEG format
             caption = f'Last Live picture, timestamp {self.node_live_timestamp}'
             self.send_img(self.node_live_img, caption)
             logging.info("ℹ️  Sending live image to bot")
@@ -1326,12 +1331,9 @@ class NodeBot():
                 self.send_text("❌ Image encoding failed.")
                 return
             img = jpeg.tobytes()
-
-        # Wrap bytes in a file-like object
         image_file = BytesIO(img)
-        image_file.name = 'live.jpg'  # Important for Telegram to recognize format
-
-        telegram.Bot(token=config.BOT_TOKEN).send_photo(
+        image_file.name = 'live.jpg'
+        Bot(token=config.BOT_TOKEN).send_photo(
             chat_id=config.CHAT_ID,
             photo=image_file,
             caption=caption
@@ -1344,11 +1346,47 @@ class NodeBot():
             bot_message = "No info yet…"
         self.send_text(bot_message)
 
+    def bot_show_menu(self, update, context):
+        keyboard = [
+            [InlineKeyboardButton("Let In", callback_data='letin')],
+            [InlineKeyboardButton("Send Live Pic", callback_data='sendlivepic')],
+            [InlineKeyboardButton("Send Last Casc Pic", callback_data='sendlastcascpic')],
+            [InlineKeyboardButton("Show Node Status", callback_data='nodestatus')],
+        ]
+
+        if config.IS_DEDICATED:
+            keyboard.append([InlineKeyboardButton("Reboot", callback_data='reboot')])
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        context.bot.send_message(
+            chat_id=config.CHAT_ID,
+            text="Choose an action:",
+            reply_markup=reply_markup
+        )
+
+    def bot_menu_button_handler(self, update, context):
+        query = update.callback_query
+        data = query.data
+
+        if data == 'letin':
+            self.node_let_in(context.bot, update)
+        elif data == 'sendlivepic':
+            self.bot_send_live_pic(context.bot, update)
+        elif data == 'sendlastcascpic':
+            self.bot_send_last_casc_pic(context.bot, update)
+        elif data == 'nodestatus':
+            self.bot_send_status(context.bot, update)
+        elif data == 'reboot':
+            self.node_reboot(context.bot, update)
+        else:
+            query.edit_message_text(text="❓ Unknown command.")
+
     def shutdown_bot(self):
         try:
             print("Stopping Telegram bot updater...")
             self.bot_updater.stop()
-            self.bot_updater.is_idle = False   # For some versions, ensures exit
+            self.bot_updater.is_idle = False
             print("Bot updater stopped.")
         except Exception as e:
             print(f"Failed to stop bot cleanly: {e}")
