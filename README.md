@@ -28,7 +28,7 @@ Edit `config.py` between the lines `### START EDITABLE VARS ###` and `### END ED
 ```
 - You can also specify a preferred backend for unlocking/locking the catflap if you configured the correct credentials for both. Select it by using the optional attribute `--backend`, which can be set to either 'surepy' or 'ha'. **NOTE**: if the chosen backend doesn’t work, there’s **no fall-back** to the other one, an error will be shown instead!
 
-- If you provide 'CAMERA_SSH_USERNAME', 'CAMERA_REMOTE_COMMAND' and 'CAMERA_SSH_KEY_FILE' in `config.py`, the script will restart your camera through SSH after 'MAX_FRAME_FAILURES' was reached and capture process was killed.
+- If you provide `CAMERA_SSH_USERNAME`, `CAMERA_REMOTE_COMMAND` and `CAMERA_SSH_KEY_FILE` in `config.py`, the script will restart your camera through SSH after `MAX_FRAME_FAILURES` was reached and capture process was killed.
 
 Here's a full help menu of the main script cascade.py:
 

@@ -99,6 +99,7 @@ except locale.Error:
     print("⚠️  Warning: de_DE.UTF-8 locale not available, using system default")
 
 # Set to True if this is a dedicated machine for this purpose
+# User needs to be allowed passwordless 'sudo reboot'
 IS_DEDICATED = False
 
 # Default camera settings

@@ -61,6 +61,7 @@ from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
 from datetime import datetime
 from telegram.ext import Updater, CommandHandler
+from telegram.error import BadRequest
 from io import BytesIO
 from typing import Optional, List
 from model_stages import PC_Stage, FF_Stage, Eye_Stage, Haar_Stage, CC_MobileNet_Stage
@@ -798,11 +799,11 @@ class Sequential_Cascade_Feeder():
                 try:
                     self.last_heartbeat = time.time()
                     if len(self.main_deque) > 0 and self.done_timestamp != self.done_timestamp_last:
-                        timestamp_bot, frame_bot = self.main_deque[-1] # newest frame for bot sendlivepic, if queue not empty
+                        # Prepare newest frame for bot's /sendlivepic
+                        timestamp_bot, frame_bot = self.main_deque[-1]
                         self.bot.node_live_img = frame_bot
                         self.bot.node_live_timestamp = timestamp_bot
                     if len(self.main_deque) > self.fps_offset:
-                        logging.debug(f"Deque type: {type(self.main_deque)}, ID={id(self.main_deque)}, max_queue_len={self.max_queue_len}, current len={len(self.main_deque)}")
                         self.queue_worker()
                     else:
                         time.sleep(0.05)
@@ -817,16 +818,16 @@ class Sequential_Cascade_Feeder():
                         self.reset_cumuli_et_al()
 
                 except Exception as e:
-                    logging.error(f"Queue handler inner exception: {e}")
-                    # Optionally, notify bot or take other action
-                    break  # Exit main loop on internal error
+                    logging.exception("Queue handler inner exception (recoverable): {e}")
+                    time.sleep(1)  # avoid tight crash loops
+                    continue
 
         except Exception as e:
             logging.error(f"Queue handler outer exception: {e}")
-            raise  # Let your global error handler deal with this
+            raise
 
     def queue_worker(self):
-        logging.debug(f"Working the Queue ID={id(self.main_deque)} with len: {len(self.main_deque)}")
+        logging.info(f"Working the Queue type: {type(self.main_deque)}, ID={id(self.main_deque)}, max_queue_len={self.max_queue_len}, current len={len(self.main_deque)}, self.fps_offset={self.fps_offset}")
         start_time = time.time()
 
         # Ensure we have enough elements before accessing
@@ -1172,19 +1173,23 @@ class Cascade:
 
     def input_text(self, img, text, text_pos, color):
         font = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 2
-        lineType = 3
+        fontScale = 1
+        thickness = 2
+        lineType = "cv.LINE_AA"
 
         cv2.putText(img, text,
                     text_pos,
                     font,
                     fontScale,
                     color,
+                    thickness,
                     lineType)
         return img
 
 class NodeBot():
     def __init__(self):
+        self.stop_reboot = False
+        self.reboot_lock = threading.Lock()
         self.last_msg_id = 0
         self.bot_updater = Updater(token=config.BOT_TOKEN)
         self.bot_dispatcher = self.bot_updater.dispatcher
@@ -1195,7 +1200,7 @@ class NodeBot():
         """
         # test if dedicated machine
         if config.IS_DEDICATED:
-            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin', '/REBOOT']
+            self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin', '/reboot', '/stopreboot']
         else:
             self.commands = ['/help', '/nodestatus', '/sendlivepic', '/sendlastcascpic', '/letin']
 
@@ -1229,12 +1234,30 @@ class NodeBot():
         self.bot_dispatcher.add_handler(send_last_casc_pic)
         letin = CommandHandler('letin', self.node_let_in)
         self.bot_dispatcher.add_handler(letin)
-        reboot = CommandHandler('reboot', self.node_reboot)
-        self.bot_dispatcher.add_handler(reboot)
+        if config.IS_DEDICATED:
+            reboot = CommandHandler('reboot', self.node_reboot)
+            self.bot_dispatcher.add_handler(reboot)
+            stopreboot = CommandHandler('stopreboot', self.node_stop_reboot)
+            self.bot_dispatcher.add_handler(stopreboot)
         self.send_text(self.get_help_menu())
 
         # Start the polling stuff
         self.bot_updater.start_polling()
+
+    def send_text(self, message):
+        telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
+
+    def edit_message_text(self, message_id, text):
+        try:
+            telegram.Bot(token=config.BOT_TOKEN).edit_message_text(
+                chat_id=config.CHAT_ID,
+                message_id=message_id,
+                text=text,
+                parse_mode=telegram.ParseMode.MARKDOWN
+            )
+        except BadRequest as e:
+            if "Message is not modified" not in str(e):
+                raise
 
     def bot_help_cmd(self, bot, update):
         bot_message = 'Following commands are supported:'
@@ -1247,17 +1270,37 @@ class NodeBot():
         self.node_let_in_flag = True
 
     def node_reboot(self, bot, update):
-        # test if dedicated machine
-        if config.IS_DEDICATED:
-            for i in range(15):
-                time.sleep(1)
-                bot_message = 'Rebooting in ' + str(15-i) + ' seconds...'
-                self.send_text(bot_message)
-            logging.info("Telegram bot requested a reboot. Won't do that, just logging it.")
-            self.send_text("REBOOTING.. See ya later Alligator!")
+        if config.IS_DEDICATED:  # test if dedicated machine
+            self.stop_reboot = False
+            threading.Thread(target=self._run_reboot_countdown, args=(bot,), daemon=True).start()
 
-            ### also uncomment this if you REALLY need to reboot
-            #os.system("sudo reboot") # won't do, some may call this as a service or standalone, not on a dedicated Pi..
+    def node_stop_reboot(self, bot, update):
+        with self.reboot_lock:
+            self.stop_reboot = True
+
+    def _run_reboot_countdown(self, bot):
+        last_text = ""
+        msg = self.bot_updater.bot.send_message(
+            chat_id=config.CHAT_ID,
+            text="🔁 Rebooting in 15 seconds... [`/stopreboot`]",
+            parse_mode=telegram.ParseMode.MARKDOWN
+        )
+        for i in range(15, 0, -1):
+            with self.reboot_lock:
+                if self.stop_reboot:
+                    self.edit_message_text(msg.message_id, "❌ Reboot cancelled.")
+                    logging.info("Reboot cancelled.")
+                    return
+            logging.info(f"Telegram bot requested a reboot, REBOOTING in {i} seconds!")
+            new_text = f"🔁 Rebooting in {i} seconds... [`/stopreboot`]"
+            if new_text != last_text:
+                self.edit_message_text(msg.message_id, new_text)
+                last_text = new_text
+            time.sleep(1)
+
+        self.edit_message_text(msg.message_id, "⚡ Rebooting now...")
+        logging.info("Telegram bot requested a reboot, REBOOTING!")
+        os.system("sudo reboot")
 
     def bot_send_last_casc_pic(self, bot, update):
         if self.node_last_casc_img is not None:
@@ -1300,9 +1343,6 @@ class NodeBot():
         else:
             bot_message = "No info yet…"
         self.send_text(bot_message)
-
-    def send_text(self, message):
-        telegram.Bot(token=config.BOT_TOKEN).send_message(chat_id=config.CHAT_ID, text=message, parse_mode=telegram.ParseMode.MARKDOWN)
 
     def shutdown_bot(self):
         try:

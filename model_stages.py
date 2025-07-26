@@ -107,8 +107,9 @@ class CC_MobileNet_Stage():
 
     def draw_rectangle(self, img, box, color, text):
         font = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 2
-        lineType = 3
+        fontScale = 1
+        thickness = 2
+        lineType = "cv.LINE_AA"
         text_pos = (box[0][0], int(box[0][1]-16))
 
         cv2.putText(img, text,
@@ -116,6 +117,7 @@ class CC_MobileNet_Stage():
                     font,
                     fontScale,
                     color,
+                    thickness,
                     lineType)
         return cv2.rectangle(img, (box[0][0], box[0][1]), (box[1][0], box[1][1]), color, 5)
 
@@ -201,8 +203,9 @@ class Haar_Stage():
 
     def draw_rectangle(self, img, box, color, text):
         font = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 2
-        lineType = 3
+        fontScale = 1
+        thickness = 2
+        lineType = "cv.LINE_AA"
         text_pos = (box[0][0], int(box[0][1]-16))
 
         cv2.putText(img, text,
@@ -210,6 +213,7 @@ class Haar_Stage():
                     font,
                     fontScale,
                     color,
+                    thickness,
                     lineType)
         return cv2.rectangle(img, (box[0][0], box[0][1]), (box[1][0], box[1][1]), color, 5)
 
@@ -301,14 +305,16 @@ class PC_Stage():
 
     def input_text(self, img, text, text_pos, color):
         font = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 2
-        lineType = 3
+        fontScale = 1
+        thickness = 2
+        lineType = "cv.LINE_AA"
 
         cv2.putText(img, text,
                     text_pos,
                     font,
                     fontScale,
                     color,
+                    thickness,
                     lineType)
         return img
 
