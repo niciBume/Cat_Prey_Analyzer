@@ -153,31 +153,30 @@ def main():
             )
             logging.info("⚠️  Surepy module NOT available!")
             return False
-        logging.info("ℹ️  Surepy module available.")
+        logging.info("ℹ️  Surepy module available")
         return True
 
     # ── Helper to know whether to try HA at all ──
     def use_ha():
-        """Return True if all HA config attributes are set (not None, empty, or zero)."""
         has_webhook = hasattr(config, "HA_WEBHOOK") and config.HA_WEBHOOK not in (None, "", 0)
         has_rest_url = hasattr(config, "HA_REST_URL") and config.HA_REST_URL not in (None, "", 0)
         has_rest_token = hasattr(config, "HA_REST_TOKEN") and config.HA_REST_TOKEN not in (None, "", 0)
 
         if not (has_webhook and has_rest_url and has_rest_token):
-            logging.debug("⚠️  Some HA config attributes are not set or empty.")
+            logging.debug("⚠️  Some HA config attributes are not set or empty")
             logging.info("⚠️  HA module NOT available!")
             return False
-        logging.info("ℹ️  HA webhook available.")
+        logging.info("ℹ️  HA webhook available")
         return True
 
     use_surepy = use_surepy()
     use_ha = use_ha()
     use_surepet = False
     if BACKEND == "surepy" and use_surepy:
-        logging.info("ℹ️  Using surepy module for unlocking/locking.")
+        logging.info("ℹ️  Using surepy module for unlocking/locking")
         use_surepet = "surepy"
     if BACKEND == "ha" and use_ha:
-        logging.info("ℹ️  Using HA webhook for unlocking/locking.")
+        logging.info("ℹ️  Using HA webhook for unlocking/locking")
         use_surepet = "ha"
     if BACKEND is None:
         use_surepet = use_surepy or use_ha
@@ -201,7 +200,7 @@ def main():
                 if shutting_down.is_set():
                     break
 
-                logging.warning(f"Camera process exited with code {exitcode}. Restarting in 5 seconds.")
+                logging.warning(f"Camera process exited with code {exitcode}, Restarting in 5 seconds…")
                 time.sleep(5)
 
                 # Restart camera process
@@ -220,7 +219,7 @@ def main():
                 sq_cascade.camera_process.start()
 
                 with suppress(Exception):
-                    bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures.")
+                    bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures")
                     if all([camera_host, camera_ssh_username, camera_remote_command, camera_ssh_key_file]):
                         logging.info("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
                         bot_instance.send_text("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
@@ -293,7 +292,7 @@ def main():
                 if hasattr(sq_cascade, "last_heartbeat"):
                     elapsed = now - sq_cascade.last_heartbeat
                     if elapsed > watchdog_timeout:
-                        msg = f"❌ [WATCHDOG]: Main analysis loop appears stuck! No heartbeat for {elapsed:.1f} seconds."
+                        msg = f"❌ [WATCHDOG]: Main analysis loop appears stuck, no heartbeat for {elapsed:.1f} seconds!"
                         print(msg)
                         logging.error(msg)
                         with suppress(Exception):
@@ -345,7 +344,7 @@ def camera_process_entry(main_deque, camera_id, shutdown_flag, pause_event, paus
         config.BACKUP_COUNT,
         log_level_str=log_level_str
     )
-    logging.info("CAMERA PROC LOGGING STARTED at %s", log_level_str)
+    logging.info(f"CAMERA PROC LOGGING STARTED at {log_level_str}")
 
     cam = Camera(main_deque, camera_id, shutdown_flag, pause_event=pause_event, pause_duration=pause_duration, log_level_str=log_level_str)
     cam.start_hardware()
@@ -410,12 +409,12 @@ class Sequential_Cascade_Feeder():
         for attempt in range(1, retries + 1):
             try:
                 result = await coro_fn()
-                logging.debug(f"{description} (attempt {attempt}) succeeded.")
+                logging.debug(f"{description} (attempt {attempt}) succeeded")
                 return result
             except Exception as e:
                 logging.warning(f"{description} (attempt {attempt}) failed: {e}")
                 await asyncio.sleep(delay)
-        logging.error(f"{description} failed after {retries} attempts.")
+        logging.error(f"{description} failed after {retries} attempts!")
         return False
 
     # ── HTTP GET with retries (for HA fallback) ──
@@ -424,12 +423,12 @@ class Sequential_Cascade_Feeder():
             try:
                 resp = requests.get(url, headers=headers, timeout=timeout)
                 resp.raise_for_status()
-                logging.debug(f"{description} (attempt {attempt}) succeeded.")
+                logging.debug(f"{description} (attempt {attempt}) succeeded")
                 return resp
             except requests.RequestException as e:
                 logging.warning(f"{description} (attempt {attempt}) failed: {e}")
                 time.sleep(1)
-        logging.error(f"{description} failed after {retries} attempts.")
+        logging.error(f"{description} failed after {retries} attempts!")
         return None
 
     # ── HTTP POST with retries (for HA fallback) ──
@@ -440,13 +439,13 @@ class Sequential_Cascade_Feeder():
                 headers = {'Content-type': 'application/json', 'Accept': 'text/plain'}
                 resp = requests.post(url, json=payload, headers=headers, timeout=timeout)
                 if 200 <= resp.status_code < 300:
-                    logging.debug(f"ℹ️  {description} (attempt {attempt}) succeeded.")
+                    logging.debug(f"ℹ️  {description} (attempt {attempt}) succeeded")
                     return True
-                logging.warning(f"{description} (attempt {attempt}) failed with status {resp.status_code}.")
+                logging.warning(f"{description} (attempt {attempt}) failed with status {resp.status_code}!")
             except requests.RequestException as e:
                 logging.warning(f"{description} (attempt {attempt}) failed: {e}")
             time.sleep(1)
-        logging.error(f"{description} failed after {retries} attempts.")
+        logging.error(f"{description} failed after {retries} attempts!")
         return False
 
     def relock_catflap_on_exit(self):
@@ -460,7 +459,7 @@ class Sequential_Cascade_Feeder():
                         # Each thread can have its own event loop!
                         import asyncio
                         asyncio.run(self.set_catflap_lock_state_surepy(self.last_unlock_state))
-                        result_holder["msg"] = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit."
+                        result_holder["msg"] = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via Surepy on exit"
                         result_holder["err"] = None
                     except Exception as e:
                         result_holder["msg"] = f"❌ Catflap relock failed via Surepy on exit: {e}"
@@ -478,7 +477,7 @@ class Sequential_Cascade_Feeder():
             if self.last_unlock_method == "ha":
                 try:
                     self.try_post_with_retries(config.HA_WEBHOOK, self.last_unlock_state, f"Re-lock catflap to [{self.last_unlock_state}]")
-                    msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via HA on exit."
+                    msg = f"🔒 Catflap re-locked to [{self.last_unlock_state}] via HA on exit"
                     print(msg)
                     self.bot.send_text(msg)
                 except Exception as e:
@@ -487,8 +486,8 @@ class Sequential_Cascade_Feeder():
                     with suppress(Exception):
                         self.bot.send_text(msg)
         else:
-            msg = "ℹ️  No catflap unlock detected, skipping re-lock on exit."
-            print(msg)
+            msg = "ℹ️  No catflap unlock detected, skipping re-lock on exit"
+            logging.info(msg)
             with suppress(Exception):
                 self.bot.send_text(msg)
 
@@ -500,7 +499,7 @@ class Sequential_Cascade_Feeder():
         }
         response = self.try_get_with_retries(config.HA_REST_URL, headers, "Query HA catflap state")
         if not response:
-            self.bot.send_text("❌ Could not query HA catflap state – aborting.")
+            self.bot.send_text("❌ Could not query HA catflap state – aborting!")
             return False
 
         try:
@@ -522,19 +521,19 @@ class Sequential_Cascade_Feeder():
             self.last_unlock_method = "ha"
             self.last_unlock_state = ha_state  # Save the state to restore
             if self.try_post_with_retries(config.HA_WEBHOOK, "unlocked", "Unlock catflap"):
-                self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {self.open_time}s.")
+                self.bot.send_text(f"ℹ️  Catflap was [{ha_state}], pausing camera and unlocking for {self.open_time}s")
                 self.pause_camera(self.open_time)
                 time.sleep(self.open_time)
                 if self.try_post_with_retries(config.HA_WEBHOOK, ha_state, f"Re-lock catflap to [{ha_state}] via HA"):
-                    self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{ha_state}].")
+                    self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{ha_state}]")
                     self.last_unlock_method = None
                     self.last_unlock_state = None
                     return True
                 else:
-                    self.bot.send_text("❌ Error relocking HA catflap.")
+                    self.bot.send_text("❌ Error relocking HA catflap")
                     return False
             else:
-                self.bot.send_text("❌ Failed to unlock HA catflap.")
+                self.bot.send_text("❌ Failed to unlock HA catflap")
                 return False
         else:
             self.bot.send_text(f"⚠️  Catflap HA state [{ha_state}] is not one of locked_out or locked_all")
@@ -546,7 +545,7 @@ class Sequential_Cascade_Feeder():
         with suppress_stdout_stderr():
             state = await self.get_catflap_state_surepy()
         if state is None:
-            self.bot.send_text("❌ Could not get state from Sure Petcare.")
+            self.bot.send_text("❌ Could not get state from Sure Petcare")
             return False
 
         open_states = {"unlocked", "locked_in"}
@@ -562,22 +561,22 @@ class Sequential_Cascade_Feeder():
             async def unlock_fn():
                 return await self.set_catflap_lock_state_surepy("unlocked")
             if await self.try_surepy_with_retries(unlock_fn, "Unlock catflap via Surepy"):
-                self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking catflap for {self.open_time}s.")
+                self.bot.send_text(f"ℹ️  Catflap was [{state}], pausing camera and unlocking catflap for {self.open_time}s")
                 self.pause_camera(self.open_time)
                 await asyncio.sleep(self.open_time)
                 # Restore original state with retries
                 async def relock_fn():
                     return await self.set_catflap_lock_state_surepy(state)
                 if await self.try_surepy_with_retries(relock_fn, f"Re-lock catflap to [{state}] via Surepy"):
-                    self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{state}].")
+                    self.bot.send_text(f"ℹ️  Catflap is re-locked to previous state: [{state}]")
                     self.last_unlock_method = None
                     self.last_unlock_state = None
                     return True
                 else:
-                    self.bot.send_text("❌ Error relocking catflap via Sure Petcare.")
+                    self.bot.send_text("❌ Error relocking catflap via Sure Petcare")
                     return False
             else:
-                self.bot.send_text("❌ Failed to unlock catflap via Sure Petcare.")
+                self.bot.send_text("❌ Failed to unlock catflap via Sure Petcare")
                 return False
         else:
             self.bot.send_text(f"⚠️  Catflap Sure Petcare [{state}] is not one of locked_out or locked_all")
@@ -595,7 +594,7 @@ class Sequential_Cascade_Feeder():
                 logging.error("❌ Using HA to unlock catflap failed!")
             return result
         else:
-            logging.error("⚠️  No backend available for catflap control.")
+            logging.error("⚠️  No backend available for catflap control!")
             return False
 
     # ── Lazy-initialize a Surepy client ──
@@ -619,7 +618,7 @@ class Sequential_Cascade_Feeder():
             device = next((d for d in devices if str(d.id) == target_id), None)
 
             if device is None:
-                logging.error(f"❌ Device ID {config.SUREPY_DEVICE_ID} not found among Surepy devices.")
+                logging.error(f"❌ Device ID {config.SUREPY_DEVICE_ID} not found among Surepy devices!")
                 return None
 
             self.device_cache = device
@@ -634,7 +633,7 @@ class Sequential_Cascade_Feeder():
         try:
             device = await self._fetch_device()
             if device is None:
-                logging.error(f"❌ No Surepy device available to read lock state. SUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}")
+                logging.error(f"❌ No Surepy device available to read lock state. SUREPY_DEVICE_ID={config.SUREPY_DEVICE_ID}!")
                 return None
             self.mode = str(device.state).lower()
             logging.info(f"🐾 Surepy catflap_state = {self.mode}")
@@ -650,7 +649,7 @@ class Sequential_Cascade_Feeder():
             client = self.get_surepy_client()
             device = await self._fetch_device()
             if device is None:
-                logging.error("❌ Could not fetch catflap device.")
+                logging.error("❌ Could not fetch catflap device!")
                 return False
 
             lock_states = {
@@ -755,12 +754,12 @@ class Sequential_Cascade_Feeder():
             sender_img = face_events[0].output_img
         elif event_objects:
             sender_img = event_objects[0].output_img
-            logging.warning("No face events; falling back to first event_object image in send_dk_message.")
+            logging.warning("No face events; falling back to first event_object image in send_dk_message")
         else:
             logging.warning("No images to send in send_dk_message")
             return
 
-        caption = 'Cumuli: ' + str(cumuli) + '❓ => Cant say for sure...' + ' 🤷' + event_str + '\nMaybe use /letin?'
+        caption = 'Cumuli: ' + str(cumuli) + '❓ => Cant say for sure…' + ' 🤷 ' + event_str + '\nMaybe use /letin?'
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -795,7 +794,7 @@ class Sequential_Cascade_Feeder():
                         self.main_deque[:] = []
                         self.reset_cumuli_et_al()
                         gc.collect()
-                        self.bot.send_text("🔥 Running hot... queue overflow cleared.")
+                        self.bot.send_text("🔥 Running hot... queue overflow cleared")
                         # Wait for camera to refill the queue
                         time.sleep(0.5)
                         continue  # Skip further processing this loop
@@ -803,10 +802,26 @@ class Sequential_Cascade_Feeder():
                     if queue_len > 0 and self.done_timestamp != self.done_timestamp_last:
                         # Update bot's live preview image
                         timestamp_bot, frame_bot = self.main_deque[-1]
+                        timestamp_bot = timestamp_bot/1000
                         self.bot.node_live_img = frame_bot
-                        self.bot.node_live_timestamp = timestamp_bot
+                        self.bot.node_live_timestamp = datetime.fromtimestamp(timestamp_bot).strftime("%Y_%m_%d %H-%M-%S.%f")
 
                     if queue_len > self.fps_offset:
+                        if queue_len > 0:
+                            try:
+                                latest_frame_timestamp = self.main_deque[-1][0]
+                                now = datetime.now(config.TIMEZONE_OBJ)
+                                timestamp_now = int(now.timestamp()*1000.0)
+                                timestamp_nice = now.strftime("%Y_%m_%d %H-%M-%S.%f")
+                                frame_age = timestamp_now/1000 - latest_frame_timestamp/1000
+                                if frame_age > 10:
+                                    logging.info(f"📦 Latest frame is stale ({frame_age*1000:.2f} > 10s), clearing queue")
+                                    self.main_deque[:] = []
+                                    self.reset_cumuli_et_al()
+                                    time.sleep(0.5)
+                                    continue
+                            except Exception as e:
+                                logging.warning(f"⛔️ Could not check frame freshness: {e}")
                         self.queue_worker()
                     else:
                         # Adaptive sleep: longer sleep if queue is empty, shorter if nearly ready
@@ -819,8 +834,8 @@ class Sequential_Cascade_Feeder():
                         if self.use_surepet:
                             self.open_catflap()
                         else:
-                            logging.info("ℹ️  No backend available to open the catflap.")
-                            self.bot.send_text("ℹ️  No backend available to open the catflap.")
+                            logging.info("ℹ️  No backend available to open the catflap")
+                            self.bot.send_text("ℹ️  No backend available to open the catflap")
                         self.reset_cumuli_et_al()
 
                 except Exception as e:
@@ -838,22 +853,26 @@ class Sequential_Cascade_Feeder():
 
         # Ensure we have enough elements before accessing
         if len(self.main_deque) <= self.fps_offset:
-            logging.warning("Not enough elements in deque for processing")
+            logging.warning("Not enough elements in deque for processing!")
             return
 
         # Feed the latest image in the Queue through the cascade
+        now = datetime.now(config.TIMEZONE_OBJ)
+        timestamp_now = int(now.timestamp()*1000.0)
+        timestamp_nice = now.strftime("%Y_%m_%d %H-%M-%S.%f")
+
         timestamp, frame = self.main_deque[self.fps_offset]
         cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
         self.done_timestamp_last = self.done_timestamp
-        self.done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
-        overhead = datetime.strptime(self.done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(timestamp, "%Y_%m_%d_%H-%M-%S.%f")
+        self.done_timestamp = timestamp_now
+        overhead = self.done_timestamp/1000 - timestamp/1000
         logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
-        logging.debug(f"Timestamp at Done Runtime: {self.done_timestamp}")
-        logging.debug(f"Overhead: {overhead.total_seconds():.2f} seconds")
+        logging.debug(f"Overhead: {overhead} seconds")
+        logging.debug(f"Time at done runtime: {timestamp_nice}")
 
         # Add this such that the bot has some info
         self.bot.node_queue_info = len(self.main_deque)
-        self.bot.node_over_head_info = overhead.total_seconds()
+        self.bot.node_over_head_info = overhead
 
         # Always delete the left part
         for _ in range(self.fps_offset + 1):
@@ -883,7 +902,7 @@ class Sequential_Cascade_Feeder():
             if self.face_counter > 0 and self.PATIENCE_FLAG:
                 if self.cumulus_points / self.face_counter > self.cumulus_no_prey_threshold:
                     self.NO_PREY_FLAG = True
-                    logging.info("🐱 NO PREY DETECTED... YOU CLEAN...")
+                    logging.info("🐱 NO PREY DETECTED… YOU CLEAN…")
                     self.send_no_prey_message(self.event_objects, self.cumulus_points / self.face_counter)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                     self.bot.send_text("😸️ Cat is clean, unlocking the catflap temporarily")
@@ -906,7 +925,7 @@ class Sequential_Cascade_Feeder():
             if self.event_reset_counter >= self.event_reset_threshold:
                 # If was True => event now over => clear queue
                 if self.EVENT_FLAG:
-                    logging.debug("CLEARED QUEQUE BECAUSE EVENT OVER WITHOUT CONCLUSION...")
+                    logging.debug("CLEARED QUEQUE BECAUSE EVENT OVER WITHOUT CONCLUSION…")
                     #TODO QUICK FIX
                     if self.face_counter == 0:
                         self.face_counter = 1
@@ -982,7 +1001,7 @@ class Cascade:
         self.haar_stage = Haar_Stage()
 
     def do_single_cascade(self, event_img_object):
-        logging.debug(event_img_object.img_name)
+        logging.debug(f"Cascade object name: {event_img_object.img_name}")
         cc_target_img = event_img_object.cc_target_img
         original_copy_img = cc_target_img.copy()
 
@@ -1051,12 +1070,12 @@ class Cascade:
                 event_img_object.pc_inference_time = inference_time
 
             else:
-                logging.info("No Face Found...")
+                logging.info("No Face Found…")
                 ff_str = "No_Face"
                 rec_img = self.input_text(img=rec_img, text=ff_str, text_pos=(15, 100), color=(255, 255, 0))
 
         else:
-            logging.debug("No Cat Found...")
+            logging.debug("No Cat Found…")
             rec_img = self.input_text(img=original_copy_img, text="CC_Pred: NoCat", text_pos=(15, 100), color=(255, 255, 0))
 
         # Always save rec_img in event_img object
@@ -1274,7 +1293,7 @@ class NodeBot():
         self.send_text(self.get_help_menu())
 
     def node_let_in(self, bot, update):
-        self.send_text("🚪️ Unlocking the catflap on user's behalf.")
+        self.send_text("🚪️ Unlocking the catflap on user's behalf…")
         self.node_let_in_flag = True
 
     def node_reboot(self, bot, update):
@@ -1296,16 +1315,16 @@ class NodeBot():
         for i in range(15, 0, -1):
             with self.reboot_lock:
                 if self.stop_reboot:
-                    self.edit_message_text(msg.message_id, "❌ Reboot cancelled.")
-                    logging.info("Reboot cancelled.")
+                    self.edit_message_text(msg.message_id, "❌ Reboot cancelled")
+                    logging.info("Reboot cancelled")
                     return
             logging.info(f"Telegram bot requested a reboot, REBOOTING in {i} seconds!")
-            new_text = f"🔁 Rebooting in {i} seconds... [`/stopreboot`]"
+            new_text = f"🔁 Rebooting in {i} seconds… [`/stopreboot`]"
             if new_text != last_text:
                 self.edit_message_text(msg.message_id, new_text)
                 last_text = new_text
             time.sleep(1)
-        self.edit_message_text(msg.message_id, "⚡ Rebooting now...")
+        self.edit_message_text(msg.message_id, "⚡ Rebooting now…")
         logging.info("Telegram bot requested a reboot, REBOOTING!")
         os.system("sudo reboot")
 
@@ -1329,7 +1348,8 @@ class NodeBot():
         if not is_encoded:
             ret, jpeg = cv2.imencode('.jpg', img)
             if not ret:
-                self.send_text("❌ Image encoding failed.")
+                self.send_text("❌ Image encoding failed!")
+                logging.debug("❌ Image encoding failed!")
                 return
             img = jpeg.tobytes()
         image_file = BytesIO(img)
@@ -1381,14 +1401,14 @@ class NodeBot():
         elif data == 'reboot':
             self.node_reboot(context.bot, update)
         else:
-            query.edit_message_text(text="❓ Unknown command.")
+            query.edit_message_text(text="❓ Unknown command")
 
     def shutdown_bot(self):
         try:
-            print("Stopping Telegram bot updater...")
+            print("Stopping Telegram bot updater…")
             self.bot_updater.stop()
             self.bot_updater.is_idle = False
-            print("Bot updater stopped.")
+            print("Bot updater stopped")
         except Exception as e:
             print(f"Failed to stop bot cleanly: {e}")
 
@@ -1458,41 +1478,43 @@ shutting_down = threading.Event()
 
 def handle_exit(signum=None, frame=None, exc=None):
     if shutting_down.is_set():
-        print("Shutdown already in progress, ignoring signal/exception.")
+        print("Shutdown already in progress, ignoring signal/exception!")
         return
     shutting_down.set()
-    print(f"Received signal {signum if signum else 'exception'}, shutting down cleanly...")
-    bot_instance.send_text(f"Received signal {signum if signum else 'exception'}, shutting down cleanly...")
+    logging.exception(f"Received signal {signum if signum else 'exception'}, shutting down cleanly…")
+    bot_instance.send_text(f"Received signal {signum if signum else 'exception'}, shutting down cleanly…")
 
     # Always relock catflap
     try:
         sq_cascade.relock_catflap_on_exit()
     except Exception as e:
+        logging.exception(f"Failed to relock catflap: {e}")
         print(f"Failed to relock catflap: {e}")
 
     # Shutdown camera process first
     if sq_cascade and sq_cascade.camera_process is not None:
         try:
-            print("Setting shutdown flag...")
+            logging.info("Setting shutdown flag…")
             sq_cascade.shutdown_flag.set()
             sq_cascade.camera_process.join(timeout=3)
             if sq_cascade.camera_process.is_alive():
-                print("Camera process did not exit, terminating...")
+                print("Camera process did not exit, terminating…")
                 print("Live threads:", threading.enumerate())
                 sq_cascade.camera_process.terminate()
                 sq_cascade.camera_process.join(timeout=3)
                 if sq_cascade.camera_process.is_alive():
-                    print("Camera process still alive after terminate(). Giving up and continuing shutdown.")
+                    print("Camera process still alive after terminate(), giving up and continuing shutdown")
                     print("Camera process still alive, killing with SIGKILL")
                     os.kill(sq_cascade.camera_process.pid, signal.SIGKILL)
                     sq_cascade.camera_process.join()
         except Exception as e:
-            print(f"Error shutting down camera process: {e}")
+            logging.exception(f"Error shutting down camera process: {e}")
 
     # Send the final shutdown confirmation
     with suppress(Exception):
         if bot_instance:
-            bot_instance.send_text("✅ Cat Prey Analyzer process has shut down cleanly.")
+            logging.info("✅ Cat Prey Analyzer process has shut down cleanly")
+            bot_instance.send_text("✅ Cat Prey Analyzer process has shut down cleanly")
 
     # Now stop the bot cleanly
     try:
@@ -1500,10 +1522,10 @@ def handle_exit(signum=None, frame=None, exc=None):
             bot_instance.shutdown_bot()
             print("Stopped bot")
     except Exception as e:
-        print(f"Failed to stop bot: {e}")
+        logging.exception(f"Failed to stop bot: {e}")
 
     time.sleep(0.25)
-    print("Exiting main process (forced).")
+    print("Exiting main process (forced)")
     try:
         sys.exit(0)
     except Exception:
@@ -1520,5 +1542,5 @@ if __name__ == '__main__':
             fcntl.flock(lock_fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
             main()
     except BlockingIOError:
-        print("Another instance is already running. Exiting.")
+        print("Another instance is already running, Exiting!")
         sys.exit(0)

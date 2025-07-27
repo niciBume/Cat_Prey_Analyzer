@@ -59,6 +59,7 @@ class Camera:
         self.max_frame_failures = getattr(config, "MAX_FRAME_FAILURES", 5)
         self.queue_cycles = getattr(config, "FILL_QUEUE_CYCLES", 60)
         self.fps_offset = getattr(config, "DEFAULT_FPS_OFFSET", 2)
+        #self.last_enqueue_time = None
         self.heartbeat_interval = getattr(config, "HEARTBEAT_INTERVAL", 60)  # seconds
         self.motion_threshold = getattr(config, "MOTION_THRESHOLD", 5000)  # Adjust as needed
         if self.motion_threshold < 0:
@@ -106,24 +107,24 @@ class Camera:
     def _detect_camera_type(self):
         if not self.camera_url:
             if PICAMERA_AVAILABLE:
-                logging.info("Using internal PiCamera2.")
+                logging.info("Using internal PiCamera2")
                 return "libcamera"
-            raise RuntimeError("No camera URL provided and PiCamera2 is not available.")
+            raise RuntimeError("No camera URL provided and PiCamera2 is not available!")
         if isinstance(self.camera_url, int) or (isinstance(self.camera_url, str) and self.camera_url.isdigit()):
             self.camera_url = int(self.camera_url)
-            logging.info("Using USB Camera.")
+            logging.info("Using USB Camera")
             return "usb"
 
         if self.camera_url.startswith("rtsp://"):
-            logging.info("Using RTSP camera stream.")
+            logging.info("Using RTSP camera stream")
             return "rtsp"
 
         if self.camera_url.startswith("http://") or self.camera_url.startswith("https://"):
-            logging.info("Using MJPEG camera stream.")
+            logging.info("Using MJPEG camera stream")
             return "mjpeg"
 
         if self.camera_url.endswith(".mp4") or self.camera_url.endswith(".avi"):
-            logging.info("Using avi/mp4 video file.")
+            logging.info("Using avi/mp4 video file")
             return "video"
 
         raise ValueError(f"Unsupported CAMERA_URL format: {self.camera_url}")
@@ -158,9 +159,9 @@ class Camera:
     def _initialize_camera(self):
         if self.camera_type == "libcamera":
             if not PICAMERA_AVAILABLE:
-                raise RuntimeError("camera_type 'libcamera' selected but Picamera2 is not available.")
+                raise RuntimeError("camera_type 'libcamera' selected but Picamera2 is not available!")
             if Picamera2 is None or Transform is None:
-                raise RuntimeError("Picamera2 modules are not properly loaded.")
+                raise RuntimeError("Picamera2 modules are not properly loaded!")
             self.picam2 = Picamera2()
             video_cfg = self.picam2.create_video_configuration(
                 main={"size": (self.cam_x, self.cam_y), "format": "RGB888"},
@@ -170,7 +171,7 @@ class Camera:
             self.picam2.configure(video_cfg)
             self.picam2.start()
             time.sleep(2)
-            logging.info("PiCamera2 initialized.")
+            logging.info("PiCamera2 initialized")
             return
 
         try:
@@ -187,7 +188,7 @@ class Camera:
                 elif self.camera_type == "mjpeg":
                     self.cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 elif self.camera_type == "rtsp":
-                    logging.debug("RTSP stream may need time to buffer. Sleeping briefly...")
+                    logging.debug("RTSP stream may need time to buffer. Sleeping briefly…")
                     time.sleep(0.05)
 
             if not self.cap.isOpened():
@@ -198,7 +199,7 @@ class Camera:
                 for _ in range(10):
                     self.cap.read()
 
-            logging.info(f"Camera initialized with {'GStreamer' if config.USE_GSTREAMER else 'OpenCV'} backend.")
+            logging.info(f"Camera initialized with {'GStreamer' if config.USE_GSTREAMER else 'OpenCV'} backend")
 
         except Exception as e:
             logging.error(f"Camera initialization failed: {e}")
@@ -211,7 +212,7 @@ class Camera:
                 raise RuntimeError(f"Failed to initialize camera after {self.max_restart_attempts} attempts") from e
 
     def _restart_camera(self):
-        logging.warning("Restarting camera...")
+        logging.warning("Restarting camera…")
         if self.camera_type == "libcamera" and self.picam2:
             self.picam2.stop()
             self.picam2.close()
@@ -219,14 +220,14 @@ class Camera:
         if self.cap:
             self.cap.release()
             self.cap = None
-        logging.debug("Camera resources released.")
+        logging.debug("Camera resources released")
         gc.collect()
         self._initialize_camera()
         self.restart_attempts = 0
 
     def _process_motion_detection(self, frame, prev_gray):
         if frame is None:
-            logging.warning("Received empty frame for motion detection.")
+            logging.warning("Received empty frame for motion detection!")
             return prev_gray, False
 
         # Convert to grayscale and blur to reduce noise
@@ -247,11 +248,11 @@ class Camera:
             motion_pixels = cv2.countNonZero(thresh)
             if motion_pixels > self.motion_threshold:
                 motion_detected = True
-                logging.debug(f"Motion detected: {motion_pixels} changed pixels (threshold: {self.motion_threshold}).")
+                logging.debug(f"Motion detected: {motion_pixels} changed pixels (threshold: {self.motion_threshold})")
             #else:
-                #logging.debug(f"No significant motion: {motion_pixels} changed pixels (threshold: {self.motion_threshold}).")
+                #logging.debug(f"No significant motion: {motion_pixels} changed pixels (threshold: {self.motion_threshold})")
         else:
-            logging.debug("No previous frame for motion detection; skipping motion calculation.")
+            logging.debug("No previous frame for motion detection; skipping motion calculation")
 
         return gray, motion_detected
 
@@ -274,7 +275,7 @@ class Camera:
         i = 0
         self.last_enqueue_time = time.time()
         logging.debug(f"MAIN_CAPTURE_LOOP STARTED in PID {os.getpid()}")
-        logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames ...")
+        logging.info(f"Starting queuing loop with {self.sleep_interval:.2f}s between frames")
 
         # --- Prefill queue and initialize prev_gray ---
         prev_gray = None
@@ -287,23 +288,27 @@ class Camera:
                 logging.error("[PREFILL]: Frame capture failed (frame is None)!")
                 consec_failures += 1
                 if consec_failures >= self.max_frame_failures:
-                    logging.error(f"[PREFILL]: Too many consecutive frame failures ({self.max_frame_failures}), exiting camera process for restart.")
+                    logging.error(f"[PREFILL]: Too many consecutive frame failures ({self.max_frame_failures}), exiting camera process for restart!")
                     sys.exit(13)
                 time.sleep(1)
                 continue
             else:
                 if len(self.q) < self.max_queue_len:
-                    timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                    #timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                    now = datetime.now(config.TIMEZONE_OBJ)
+                    timestamp = int(now.timestamp()*1000.0)
+                    timestamp_nice = now.strftime("%Y_%m_%d %H-%M-%S.%f")
                     self.q.append((timestamp, frame))
+                    self.last_enqueue_time = time.time()
                     last_frame = frame
-                    logging.debug(f"[PREFILL]: Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
+                    logging.debug(f"[PREFILL]: Enqueued frame at {timestamp_nice} | Queue ID={id(self.q)} length: {len(self.q)}")
                     consec_failures = 0
 
             time.sleep(self.sleep_interval)
         if last_frame is not None:
             prev_gray = cv2.cvtColor(last_frame, cv2.COLOR_BGR2GRAY)
             prev_gray = cv2.GaussianBlur(prev_gray, (21, 21), 0)
-            #logging.debug("Initialized prev_gray from last prefill frame.")
+            logging.debug("Initialized prev_gray from last prefill frame")
 
         logging.debug("DONE PREFILL - entering main loop")
 
@@ -324,13 +329,12 @@ class Camera:
                     continue
 
                 # Grab a frame
-                now = time.time()
                 frame = self._capture_frame()
                 if frame is None:
-                    logging.error("Frame capture failed (frame is None) in main loop.")
+                    logging.error("Frame capture failed (frame is None) in main loop!")
                     consec_failures += 1
                     if consec_failures >= self.max_frame_failures:
-                        logging.error(f"Too many consecutive frame failures ({self.max_frame_failures}), exiting camera process for restart.")
+                        logging.error(f"Too many consecutive frame failures ({self.max_frame_failures}), exiting camera process for restart!")
                         sys.exit(13)
                     time.sleep(1)
                     continue
@@ -346,30 +350,33 @@ class Camera:
                 prev_gray = gray
 
                 # Motion or heartbeat: queue frame
-                heartbeat_due = (now - self.last_enqueue_time) > self.heartbeat_interval
-                timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                heartbeat_due = (time.time() - self.last_enqueue_time) > self.heartbeat_interval
+                #timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
+                now = datetime.now(config.TIMEZONE_OBJ)
+                timestamp = int(now.timestamp()*1000.0)
+                timestamp_nice = now.strftime("%Y_%m_%d %H-%M-%S.%f")
 
                 if motion_detected:
                     # Only enqueue motion frame
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        self.last_enqueue_time = now
-                        logging.debug(f"[MOTION] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)}")
+                        self.last_enqueue_time = time.time()
+                        logging.debug(f"[MOTION] Enqueued frame at {timestamp_nice} | Queue ID={id(self.q)} length: {len(self.q)}")
                     else:
-                        logging.warning(f"Queue is full {self.max_queue_len}, dropping motion frame.")
+                        logging.warning(f"Queue is full {self.max_queue_len}, dropping motion frame!")
 
                 elif heartbeat_due:
                     # Only enqueue heartbeat if no motion was detected
                     if len(self.q) < self.max_queue_len:
                         self.q.append((timestamp, frame))
-                        logging.info(f"🌙 [HEARTBEAT] Enqueued frame at {timestamp} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
+                        self.last_enqueue_time = time.time()
+                        logging.info(f"🌙 [HEARTBEAT] Enqueued frame at {timestamp_nice} | Queue ID={id(self.q)} length: {len(self.q)} [quiet]")
                     else:
                         logging.warning(
                             f"### THIS SHOULDN'T HAPPEN ### Queue is full {self.max_queue_len}, dropping heartbeat frame! "
                             f"It means that the queue processing is not working for more than {self.heartbeat_interval}s, "
                             f"or your system is very slow..."
                         )
-                    self.last_enqueue_time = now
 
                 # Sleep in small increments to allow shutdown responsiveness
                 slept = 0
@@ -379,7 +386,7 @@ class Camera:
 
                 i += 1
                 if self.queue_cycles > 0 and i >= self.queue_cycles:
-                    logging.info(f"Refreshing camera after {self.queue_cycles} frames.")
+                    logging.info(f"Refreshing camera after {self.queue_cycles} frames")
                     self._restart_camera()
                     i = 0
 
