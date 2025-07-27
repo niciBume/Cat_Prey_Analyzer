@@ -821,7 +821,7 @@ class Sequential_Cascade_Feeder():
                                 frame_age = (timestamp_now - second_newest_frame) / 1000
                                 logging.info(f"Second-newest frame age={frame_age}, timestamp_now={timestamp_now}, timestamp second-newest frame={second_newest_frame}")
                                 if frame_age > 20:
-                                    logging.info(f"📦 Second-newest frame is stale ({frame_age*1000:.2f} > 20s), clearing queue")
+                                    logging.info(f"📦 Second-newest frame is stale ({frame_age:.2f} > 20s), clearing queue")
                                     self.main_deque[:] = []
                                     self.reset_cumuli_et_al()
                                     time.sleep(0.5)
