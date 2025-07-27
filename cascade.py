@@ -810,13 +810,18 @@ class Sequential_Cascade_Feeder():
                     if queue_len > self.fps_offset:
                         if queue_len > 0:
                             try:
-                                latest_frame_timestamp = self.main_deque[-1][0]
+                                # latest frame was just added, consider the one before last
+                                if queue_len > 1:
+                                    second_newest_frame = self.main_deque[queue_len - 2][0]
+                                else:
+                                    second_newest_frame = self.main_deque[0][0]
                                 now = datetime.now(config.TIMEZONE_OBJ)
                                 timestamp_now = int(now.timestamp()*1000.0)
                                 timestamp_nice = now.strftime("%Y_%m_%d %H-%M-%S.%f")
-                                frame_age = timestamp_now/1000 - latest_frame_timestamp/1000
-                                if frame_age > 10:
-                                    logging.info(f"📦 Latest frame is stale ({frame_age*1000:.2f} > 10s), clearing queue")
+                                frame_age = (timestamp_now - second_newest_frame) / 1000
+                                logging.info(f"Second-newest frame age={frame_age}, timestamp_now={timestamp_now}, timestamp second-newest frame={second_newest_frame}")
+                                if frame_age > 20:
+                                    logging.info(f"📦 Second-newest frame is stale ({frame_age*1000:.2f} > 20s), clearing queue")
                                     self.main_deque[:] = []
                                     self.reset_cumuli_et_al()
                                     time.sleep(0.5)
@@ -863,7 +868,7 @@ class Sequential_Cascade_Feeder():
         timestamp_nice = now.strftime("%Y_%m_%d %H-%M-%S.%f")
 
         timestamp, frame = self.main_deque[self.fps_offset]
-        cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
+        cascade_obj = self.feed(target_img=frame, img_name=str(timestamp))[1]
         self.done_timestamp_last = self.done_timestamp
         self.done_timestamp = timestamp_now
         overhead = self.done_timestamp/1000 - timestamp/1000
@@ -1482,6 +1487,7 @@ def handle_exit(signum=None, frame=None, exc=None):
         print("Shutdown already in progress, ignoring signal/exception!")
         return
     shutting_down.set()
+    print(f"Received signal {signum if signum else 'exception'}, shutting down cleanly…")
     logging.exception(f"Received signal {signum if signum else 'exception'}, shutting down cleanly…")
     bot_instance.send_text(f"Received signal {signum if signum else 'exception'}, shutting down cleanly…")
 
@@ -1527,6 +1533,7 @@ def handle_exit(signum=None, frame=None, exc=None):
 
     time.sleep(0.25)
     print("Exiting main process (forced)")
+    logging.info("Exiting main process (forced)")
     try:
         sys.exit(0)
     except Exception:
