@@ -49,12 +49,13 @@ import threading
 import config
 import logging
 import traceback
-import numpy as np
-import xml.etree.ElementTree as ET
 import multiprocessing
 import paramiko
 import socket
 import fcntl
+import gc
+import numpy as np
+import xml.etree.ElementTree as ET
 from urllib.parse import urlparse
 from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
