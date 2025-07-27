@@ -59,7 +59,7 @@ from urllib.parse import urlparse
 from contextlib import contextmanager, suppress
 from logging_setup import setup_logging
 from datetime import datetime
-from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Update, ParseMode, BotCommand
+from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode, BotCommand
 from telegram.ext import Updater, CommandHandler, CallbackQueryHandler
 from telegram.error import BadRequest
 from io import BytesIO
@@ -682,22 +682,12 @@ class Sequential_Cascade_Feeder():
         self.event_reset_counter = 0
         self.face_counter = 0
         self.PREY_FLAG = None
-        self.NO_PREY_FLAG = None
         self.cumulus_points = 0
-
-        #Close the node_letin flag
-        self.bot.node_let_in_flag = False
-
         self.event_objects.clear()
         self.queues_cumuli_in_event.clear()
         self.main_deque[:] = []
-
-        #terminate processes when pool too large
-        if len(self.processing_pool) >= self.MAX_PROCESSES:
-            logging.debug(f"terminating oldest processes Len: {len(self.processing_pool)}")
-            for p in self.processing_pool[0:int(len(self.processing_pool)/2)]:
-                p.terminate()
-            logging.debug(f"Now processes Len: {len(self.processing_pool)}")
+        self.bot.node_let_in_flag = False
+        self.NO_PREY_FLAG = None
 
     def log_event_to_csv(self, event_obj, queues_cumuli_in_event, event_nr):
         csv_name = 'event_log.csv'
@@ -770,7 +760,7 @@ class Sequential_Cascade_Feeder():
             logging.warning("No images to send in send_dk_message")
             return
 
-        caption = 'Cumuli: ' + str(cumuli) + '❔️ => Cant say for sure...' + ' 🤷' + event_str + '\nMaybe use /letin?'
+        caption = 'Cumuli: ' + str(cumuli) + '❓ => Cant say for sure...' + ' 🤷' + event_str + '\nMaybe use /letin?'
         self.bot.send_img(img=sender_img, caption=caption)
         return
 
@@ -798,15 +788,31 @@ class Sequential_Cascade_Feeder():
             while not self.shutdown_flag.is_set():
                 try:
                     self.last_heartbeat = time.time()
-                    if len(self.main_deque) > 0 and self.done_timestamp != self.done_timestamp_last:
-                        # Prepare newest frame for bot's /sendlivepic
+                    queue_len = len(self.main_deque)
+
+                    if queue_len > self.max_queue_len:
+                        logging.warning("⚠️ Queue overflow — clearing queue to recover")
+                        self.main_deque[:] = []
+                        self.reset_cumuli_et_al()
+                        gc.collect()
+                        self.bot.send_text("🔥 Running hot... queue overflow cleared.")
+                        # Wait for camera to refill the queue
+                        time.sleep(0.5)
+                        continue  # Skip further processing this loop
+
+                    if queue_len > 0 and self.done_timestamp != self.done_timestamp_last:
+                        # Update bot's live preview image
                         timestamp_bot, frame_bot = self.main_deque[-1]
                         self.bot.node_live_img = frame_bot
                         self.bot.node_live_timestamp = timestamp_bot
-                    if len(self.main_deque) > self.fps_offset:
+
+                    if queue_len > self.fps_offset:
                         self.queue_worker()
                     else:
-                        time.sleep(0.05)
+                        # Adaptive sleep: longer sleep if queue is empty, shorter if nearly ready
+                        deficit = max(0, self.fps_offset - queue_len)
+                        sleep_time = min(0.3, 0.01 + 0.02 * deficit)  # ranges between 0.01s to ~0.3s
+                        time.sleep(sleep_time)
 
                     # Check if user force opens the door or cat is clean
                     if self.bot.node_let_in_flag or (self.NO_PREY_FLAG and not self.PREY_FLAG):
@@ -827,7 +833,7 @@ class Sequential_Cascade_Feeder():
             raise
 
     def queue_worker(self):
-        logging.info(f"Working the Queue type: {type(self.main_deque)}, ID={id(self.main_deque)}, max_queue_len={self.max_queue_len}, current len={len(self.main_deque)}, self.fps_offset={self.fps_offset}")
+        logging.info(f"Working the Queue: ID={id(self.main_deque)}, type={type(self.main_deque)}, max len={self.max_queue_len}, current len={len(self.main_deque)}, fps offset={self.fps_offset}")
         start_time = time.time()
 
         # Ensure we have enough elements before accessing
@@ -838,12 +844,11 @@ class Sequential_Cascade_Feeder():
         # Feed the latest image in the Queue through the cascade
         timestamp, frame = self.main_deque[self.fps_offset]
         cascade_obj = self.feed(target_img=frame, img_name=timestamp)[1]
-        logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
         self.done_timestamp_last = self.done_timestamp
         self.done_timestamp = datetime.now(config.TIMEZONE_OBJ).strftime("%Y_%m_%d_%H-%M-%S.%f")
-        logging.debug(f"Timestamp at Done Runtime: {self.done_timestamp}")
-
         overhead = datetime.strptime(self.done_timestamp, "%Y_%m_%d_%H-%M-%S.%f") - datetime.strptime(timestamp, "%Y_%m_%d_%H-%M-%S.%f")
+        logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
+        logging.debug(f"Timestamp at Done Runtime: {self.done_timestamp}")
         logging.debug(f"Overhead: {overhead.total_seconds():.2f} seconds")
 
         # Add this such that the bot has some info
@@ -865,7 +870,6 @@ class Sequential_Cascade_Feeder():
             #Last cat pic for bot
             self.bot.node_last_casc_img = cascade_obj.output_img
 
-            self.fps_offset = 0
             #If face found add the cumulus points
             if cascade_obj.face_bool:
                 self.face_counter += 1
@@ -888,7 +892,6 @@ class Sequential_Cascade_Feeder():
                     logging.info("🐁 CAT HAS A PREY!!!!!")
                     self.send_prey_message(self.event_objects, self.cumulus_points / self.face_counter)
                     self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
-                    self.reset_cumuli_et_al()
                 else:
                     self.NO_PREY_FLAG = False
                     self.PREY_FLAG = False
@@ -908,7 +911,7 @@ class Sequential_Cascade_Feeder():
                     if self.face_counter == 0:
                         self.face_counter = 1
                     self.send_dk_message(self.event_objects, self.cumulus_points / self.face_counter)
-                    #self.log_event_to_csv...
+                    self.log_event_to_csv(event_obj=self.event_objects, queues_cumuli_in_event=self.queues_cumuli_in_event, event_nr=self.event_nr)
                 self.reset_cumuli_et_al()
 
         if self.EVENT_FLAG and self.FACE_FOUND_FLAG:
@@ -916,13 +919,11 @@ class Sequential_Cascade_Feeder():
         if self.patience_counter > 2 or self.face_counter > 1:
             self.PATIENCE_FLAG = True
 
-    def single_debug(self):
-        start_time = time.time()
-        target_img_name = "dummy_img.jpg"
-        target_img = cv2.imread(os.path.join(os.getcwd(), "readme_images/lenna_casc_Node1_001557_02_2020_05_24_09-49-35.jpg"))
-        cascade_obj = self.feed(target_img=target_img, img_name=target_img_name)[1]
-        logging.debug(f"Runtime: {time.time() - start_time:.2f} seconds")
-        return cascade_obj
+        # ⏲️ Throttle loop frequency
+        cascade_runtime = time.time() - start_time
+        min_delay = 0.1  # seconds
+        if cascade_runtime < min_delay:
+            time.sleep(min_delay - cascade_runtime)
 
     def feed(self, target_img, img_name):
         target_event_obj = Event_Element(img_name=img_name, cc_target_img=target_img)
