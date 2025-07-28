@@ -221,16 +221,17 @@ def main():
 
                 with suppress(Exception):
                     bot_instance.send_text("🔄 Camera process restarted due to repeated RTSP failures")
-                    if all([camera_host, camera_ssh_username, camera_remote_command, camera_ssh_key_file]):
-                        logging.info("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
-                        bot_instance.send_text("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
-                        restart_camera_over_ssh(
-                            camera_host,
-                            camera_ssh_username,
-                            camera_remote_command,
-                            camera_ssh_key_file,
-                            bot=bot_instance
-                        )
+                    if CAMERA_ID != "default":
+                        if all([camera_host, camera_ssh_username, camera_remote_command, camera_ssh_key_file]):
+                            logging.info("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
+                            bot_instance.send_text("🔄 MAX_FRAME_FAILURES limit reached, restarting Camera over SSH")
+                            restart_camera_over_ssh(
+                                camera_host,
+                                camera_ssh_username,
+                                camera_remote_command,
+                                camera_ssh_key_file,
+                                bot=bot_instance
+                            )
             else:
                 time.sleep(0.5)
 
@@ -817,9 +818,8 @@ class Sequential_Cascade_Feeder():
                                     second_newest_frame = self.main_deque[0][0]
                                 now = datetime.now(config.TIMEZONE_OBJ)
                                 timestamp_now = int(now.timestamp()*1000.0)
-                                timestamp_nice = now.strftime("%Y_%m_%d %H-%M-%S.%f")
                                 frame_age = (timestamp_now - second_newest_frame) / 1000
-                                logging.info(f"Second-newest frame age={frame_age}, timestamp_now={timestamp_now}, timestamp second-newest frame={second_newest_frame}")
+                                logging.debug(f"Second-newest frame age={frame_age}, timestamp_now={timestamp_now}, timestamp second-newest frame={second_newest_frame}")
                                 if frame_age > 20:
                                     logging.info(f"📦 Second-newest frame is stale ({frame_age:.2f} > 20s), clearing queue")
                                     self.main_deque[:] = []
