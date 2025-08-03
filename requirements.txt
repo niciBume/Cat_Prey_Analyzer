@@ -1,0 +1,19 @@
+numpy>=1.23
+imageio>=2.37.0
+pytz>=2021.1
+requests>=2.25
+python-telegram-bot>=13.15
+aiohttp>=3.7
+PyYAML>=5.4
+tensorflow>=2.4
+tensorflow-object-detection-api>=0.1.1
+python-dotenv>=0.21.0
+# if you don't want to use GStreamer for capturing frames, uncomment this
+#opencv-python>=4.5.0
+
+# For Raspberry Pi only (optional, can comment out if not needed on x86)
+# picamera2 ; platform_machine == "armv7l" or platform_machine == "aarch64"
+# libcamera ; platform_machine == "armv7l" or platform_machine == "aarch64"
+
+# Surepy: always use latest dev branch from GitHub
+git+https://github.com/benleb/surepy.git@dev#egg=surepy

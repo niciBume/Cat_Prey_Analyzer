@@ -107,8 +107,9 @@ class CC_MobileNet_Stage():
 
     def draw_rectangle(self, img, box, color, text):
         font = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 2
-        lineType = 3
+        fontScale = 1
+        thickness = 2
+        lineType = cv2.LINE_AA
         text_pos = (box[0][0], int(box[0][1]-16))
 
         cv2.putText(img, text,
@@ -116,8 +117,9 @@ class CC_MobileNet_Stage():
                     font,
                     fontScale,
                     color,
+                    thickness,
                     lineType)
-        return cv2.rectangle(img, (box[0][0], box[0][1]), (box[1][0], box[1][1]), color, 5)
+        return cv2.rectangle(img, (box[0][0], box[0][1]), (box[1][0], box[1][1]), color, 2)
 
 
     # This function contains the code to detect a pet, determine if it's
@@ -201,8 +203,9 @@ class Haar_Stage():
 
     def draw_rectangle(self, img, box, color, text):
         font = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 2
-        lineType = 3
+        fontScale = 1
+        thickness = 2
+        lineType = cv2.LINE_AA
         text_pos = (box[0][0], int(box[0][1]-16))
 
         cv2.putText(img, text,
@@ -210,8 +213,9 @@ class Haar_Stage():
                     font,
                     fontScale,
                     color,
+                    thickness,
                     lineType)
-        return cv2.rectangle(img, (box[0][0], box[0][1]), (box[1][0], box[1][1]), color, 5)
+        return cv2.rectangle(img, (box[0][0], box[0][1]), (box[1][0], box[1][1]), color, 2)
 
 
     def calc_iou(self, gt_bbox, pred_bbox):
@@ -301,14 +305,16 @@ class PC_Stage():
 
     def input_text(self, img, text, text_pos, color):
         font = cv2.FONT_HERSHEY_SIMPLEX
-        fontScale = 2
-        lineType = 3
+        fontScale = 1
+        thickness = 2
+        lineType = cv2.LINE_AA
 
         cv2.putText(img, text,
                     text_pos,
                     font,
                     fontScale,
                     color,
+                    thickness,
                     lineType)
         return img
 
@@ -418,7 +424,7 @@ class Eye_Stage():
         bbs = self.eyes_to_box(pred_eyes=eyes_full_coords, cc_target_img=cc_target_img, cc_pred_full=cc_pred_bb)
 
         #for eye in eyes_full_coords:
-        #    cv2.circle(cc_target_img, center=tuple(eye), radius=15, color=(0, 255, 0), thickness=5)
+        #    cv2.circle(cc_target_img, center=tuple(eye), radius=15, color=(0, 255, 0), thickness=2)
 
         pc_xmin = int(bbs[0][0])
         pc_ymin = int(bbs[0][1])
